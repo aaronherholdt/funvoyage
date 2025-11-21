@@ -1,0 +1,7 @@
+{
+  "name": "FunVoyage",
+  "description": "A voice-first digital passport and learning companion for worldschooling kids.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
