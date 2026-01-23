@@ -49,10 +49,13 @@ export interface Session {
   city?: string;
   date: string;
   entries: SessionEntry[];
+  // Journaling & Problem-Solving data
+  journalEntry: string;
+  identifiedProblems: string[]; // Max 3 items
   // Analysis data
   analysis?: SessionAnalysis;
-  earnedBadges?: Badge[]; 
-  
+  earnedBadges?: Badge[];
+
   media: SessionMedia[];
   completed: boolean;
 }
@@ -81,13 +84,11 @@ export interface ParentUser {
   kids: KidProfile[];
 }
 
-export type ConversationStage = 
-  | 'intro' 
-  | 'likes' 
-  | 'culture' 
-  | 'problems_country' 
-  | 'problems_family' 
-  | 'drawing' 
+export type ConversationStage =
+  | 'intro'
+  | 'brainstorm'
+  | 'explore'
+  | 'celebrate'
   | 'summary'; // summary is now a transition state to completion
 
 export interface Country {
