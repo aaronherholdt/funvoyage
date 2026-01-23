@@ -2,6 +2,7 @@
 export enum UserTier {
   GUEST = 'GUEST',
   FREE = 'FREE',
+  STARTER = 'STARTER',
   PRO = 'PRO',
   ADVENTURER = 'ADVENTURER'
 }

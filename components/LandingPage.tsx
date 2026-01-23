@@ -6,12 +6,18 @@ import { getAgeTheme, BADGES } from '../constants';
 
 interface LandingPageProps {
   onStart: () => void;
+  onLogin: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) => {
   const [previewAge, setPreviewAge] = useState(8);
   const [activeSection, setActiveSection] = useState<'main' | 'methodology' | 'safety' | 'pricing'>('main');
   const previewTheme = getAgeTheme(previewAge);
+
+  const handleUpgrade = (tier: 'STARTER' | 'PRO' | 'ADVENTURER') => {
+    // Simple redirect – no extra fetch needed
+    window.location.href = `/api/paypal/checkout?tier=${tier}`;
+  };
 
   const renderMethodology = () => (
     <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
@@ -161,52 +167,65 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
             </div>
             <h2 className="font-kid text-4xl md:text-6xl text-slate-900 mb-6">Invest in their <br/><span className="text-orange-500">memories.</span></h2>
             <p className="text-xl text-slate-600 leading-relaxed">
-                Cheaper than a single museum ticket, but lasts a lifetime. Start for free, upgrade when you're ready to travel the world.
+                Cheaper than a single museum ticket, but lasts a lifetime. Take your first trip free without an account, then move into Starter or Pro when you're ready for monthly adventures.
             </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto items-end">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto items-stretch">
             
             {/* Free Tier */}
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-200 relative">
+            <div className="bg-white rounded-[2rem] p-8 border border-slate-200 relative flex flex-col">
                 <h3 className="text-xl font-bold text-slate-900 mb-2">Tourist</h3>
-                <div className="text-4xl font-bold text-slate-900 mb-4">Free</div>
+                <div className="text-4xl font-bold text-slate-900 mb-1">Free</div>
                 <p className="text-slate-500 text-sm mb-6">Perfect for testing the waters on a weekend trip.</p>
-                <ul className="space-y-3 mb-8">
-                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> 1 Trip / Country</li>
+                <ul className="space-y-3 mb-8 flex-1">
+                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> 1 trip total (account optional)</li>
                     <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> Basic AI Chat</li>
-                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> 1 Child Profile</li>
+                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> Save drawings & photos for this trip</li>
                 </ul>
                 <Button onClick={onStart} variant="secondary" fullWidth>Try Now</Button>
             </div>
 
+            {/* Starter Tier */}
+            <div className="bg-white rounded-[2rem] p-8 border border-slate-200 relative flex flex-col">
+                <h3 className="text-xl font-bold text-slate-900 mb-2">Starter</h3>
+                <div className="text-4xl font-bold text-slate-900 mb-1">$5<span className="text-lg text-slate-500 font-normal">/mo</span></div>
+                <p className="text-slate-500 text-sm mb-6">For families dipping into monthly adventures.</p>
+                <ul className="space-y-3 mb-8 flex-1">
+                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> 3 trips per month</li>
+                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> 1 Child Profile</li>
+                    <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400"/> No badges or media saving</li>
+                </ul>
+                <Button onClick={() => handleUpgrade('STARTER')} variant="outline" fullWidth>Upgrade to Starter</Button>
+            </div>
+
             {/* Pro Tier */}
-            <div className="bg-teal-50 rounded-[2rem] p-8 border-2 border-teal-500 relative shadow-xl transform scale-105 z-10">
+            <div className="bg-teal-50 rounded-[2rem] p-8 border-2 border-teal-500 relative shadow-xl flex flex-col lg:-mt-4 lg:mb-4 z-10">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">Most Popular</div>
                 <h3 className="text-xl font-bold text-teal-900 mb-2">Explorer Pro</h3>
                 <div className="text-4xl font-bold text-slate-900 mb-1">$10<span className="text-lg text-slate-500 font-normal">/mo</span></div>
                 <p className="text-teal-700/80 text-sm mb-6">For the annual family vacation.</p>
-                <ul className="space-y-3 mb-8">
-                    <li className="flex items-center gap-2 text-slate-800 font-medium"><Check size={18} className="text-teal-500"/> Up to 10 Trips</li>
-                    <li className="flex items-center gap-2 text-slate-800 font-medium"><Check size={18} className="text-teal-500"/> Earn Learning Badges</li>
-                    <li className="flex items-center gap-2 text-slate-800 font-medium"><Check size={18} className="text-teal-500"/> Save Drawings & Photos</li>
-                    <li className="flex items-center gap-2 text-slate-800 font-medium"><Check size={18} className="text-teal-500"/> Up to 3 Child Profiles</li>
+                <ul className="space-y-3 mb-8 flex-1">
+                    <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500"/> Up to 10 Trips</li>
+                    <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500"/> Earn Learning Badges</li>
+                    <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500"/> Save Drawings & Photos</li>
+                    <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500"/> Up to 3 Child Profiles</li>
                 </ul>
-                <Button onClick={onStart} variant="primary" fullWidth>Start Free Trial</Button>
+                <Button onClick={() => handleUpgrade('PRO')} variant="primary" fullWidth>Upgrade to Pro</Button>
             </div>
 
              {/* Adventurer Tier */}
-             <div className="bg-white rounded-[2rem] p-8 border border-slate-200 relative">
+             <div className="bg-white rounded-[2rem] p-8 border border-slate-200 relative flex flex-col">
                 <h3 className="text-xl font-bold text-orange-900 mb-2">World Adventurer</h3>
                 <div className="text-4xl font-bold text-slate-900 mb-1">$25<span className="text-lg text-slate-500 font-normal">/mo</span></div>
                 <p className="text-slate-500 text-sm mb-6">For full-time worldschooling families.</p>
-                <ul className="space-y-3 mb-8">
+                <ul className="space-y-3 mb-8 flex-1">
                     <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-orange-500"/> Unlimited Trips</li>
                     <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-orange-500"/> Priority AI Access</li>
                     <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-orange-500"/> Printable PDF Reports</li>
                     <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-orange-500"/> Unlimited Child Profiles</li>
                 </ul>
-                <Button onClick={onStart} variant="outline" fullWidth>Go Unlimited</Button>
+                <Button onClick={() => handleUpgrade('ADVENTURER')} variant="outline" fullWidth>Upgrade to Adventurer</Button>
             </div>
         </div>
     </div>
@@ -224,14 +243,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
                   Turns trips into <span className="text-teal-400">Core Memories.</span>
               </h1>
               <p className="text-slate-400 text-lg md:text-xl max-w-md leading-relaxed mb-8">
-                  The AI passport that adapts to your child's age. From toddlers to teens, FunVoyage makes travel educational.
+                  The digital passport that adapts to your child's age. From toddlers to teens, FunVoyage makes travel educational.
               </p>
               <button 
                   onClick={onStart}
                   className="bg-white text-slate-900 hover:bg-teal-50 font-bold text-lg px-8 py-4 rounded-2xl transition-all transform active:scale-95 inline-flex items-center gap-2 shadow-xl"
               >
-                  Get Stamped <ArrowRight size={20} />
+                  Start Free Test Trip <ArrowRight size={20} />
               </button>
+              <div className="mt-3 text-sm text-slate-300">
+                  Already have an account? <button className="text-teal-200 font-bold" onClick={onLogin}>Log in</button>
+              </div>
            </div>
            {/* Decorative Abstract Shapes */}
            <div className="absolute top-0 right-0 w-96 h-96 bg-teal-600 rounded-full blur-[120px] opacity-20 -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
@@ -478,9 +500,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
                      <X size={20} />
                  </Button>
              )}
-             <Button variant="primary" onClick={onStart} className="font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200">Sign In</Button>
-         </div>
-      </nav>
+            <Button variant="primary" onClick={onLogin} className="font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-200">Sign In</Button>
+        </div>
+     </nav>
 
       {/* Main Content Switcher */}
       <div className="p-4 md:p-8 max-w-7xl mx-auto">

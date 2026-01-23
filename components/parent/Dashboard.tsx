@@ -1,27 +1,56 @@
 
 import React from 'react';
 import { ParentUser, UserTier, KidProfile, Session, Badge } from '../../types';
-import { TIER_LIMITS, COUNTRIES, BADGES, getFlagEmoji } from '../../constants';
+import { TIER_LIMITS, TIER_CHILD_LIMITS, BADGES, getFlagEmoji } from '../../constants';
 import { Button } from '../Button';
-import { Map, Award, Calendar, Lock, CheckCircle, Crown } from 'lucide-react';
+import { Map, Award, Calendar, Lock, CheckCircle, Crown, LogOut, Plus, Users } from 'lucide-react';
 
 interface DashboardProps {
   user: ParentUser;
   onUpgrade: () => void;
   onViewPassport: (kidId: string) => void;
+  onLogout: () => void;
+  onAddChild: () => void;
+  onEditChild?: (kid: KidProfile) => void;
+  onRemoveChild?: (kidId: string) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPassport }) => {
-  const usedCountries = new Set(user.kids.flatMap(k => k.sessions.map(s => s.countryCode))).size;
+export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPassport, onLogout, onAddChild, onEditChild, onRemoveChild }) => {
+  const totalTripsUsed = user.kids.reduce((sum, kid) => sum + kid.sessions.length, 0);
+  const countTripsThisMonth = () => {
+    const now = new Date();
+    return user.kids.reduce((sum, kid) => {
+      const monthlyTrips = kid.sessions.filter(session => {
+        const date = new Date(session.date);
+        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      }).length;
+      return sum + monthlyTrips;
+    }, 0);
+  };
+
+  const tripsUsed = user.tier === UserTier.STARTER ? countTripsThisMonth() : totalTripsUsed;
   const limit = TIER_LIMITS[user.tier];
   const isUnlimited = user.tier === UserTier.ADVENTURER;
   const isPaid = user.tier === UserTier.PRO || user.tier === UserTier.ADVENTURER;
-  const isLimitReached = !isUnlimited && usedCountries >= limit;
+  const isLimitReached = !isUnlimited && tripsUsed >= limit;
+  const freeLimit = TIER_LIMITS[UserTier.FREE];
+  const showUpgradeCta = user.tier !== UserTier.ADVENTURER && (
+    user.tier === UserTier.PRO ||
+    user.tier === UserTier.STARTER ||
+    totalTripsUsed >= freeLimit
+  );
+  const tripsLabel = user.tier === UserTier.STARTER ? 'Trips Saved (this month)' : 'Trips Saved';
+  
+  // Child limits
+  const childLimit = TIER_CHILD_LIMITS[user.tier];
+  const isChildLimitUnlimited = childLimit >= 9999;
+  const isChildLimitReached = !isChildLimitUnlimited && user.kids.length >= childLimit;
 
   const getTierColor = () => {
     switch (user.tier) {
       case UserTier.ADVENTURER: return 'text-orange-600';
       case UserTier.PRO: return 'text-teal-600';
+      case UserTier.STARTER: return 'text-slate-700';
       default: return 'text-slate-700';
     }
   };
@@ -35,19 +64,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
           <p className="text-slate-600">Welcome back, {user.name}</p>
         </div>
         
-        <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-          <div className="text-sm flex items-center gap-2">
-            <span className="text-slate-500">Plan: </span>
-            <span className={`font-bold flex items-center gap-1 ${getTierColor()}`}>
-              {user.tier === UserTier.ADVENTURER && <Crown size={14} />}
-              {user.tier.replace('_', ' ')}
-            </span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-sm flex items-center gap-2">
+              <span className="text-slate-500">Plan: </span>
+              <span className={`font-bold flex items-center gap-1 ${getTierColor()}`}>
+                {user.tier === UserTier.ADVENTURER && <Crown size={14} />}
+                {user.tier.replace('_', ' ')}
+              </span>
+            </div>
+            {showUpgradeCta && (
+              <Button size="sm" variant="accent" onClick={onUpgrade}>
+                Upgrade
+              </Button>
+            )}
           </div>
-          {user.tier !== UserTier.ADVENTURER && (
-            <Button size="sm" variant="accent" onClick={onUpgrade}>
-              Upgrade
-            </Button>
-          )}
+          <Button variant="ghost" size="sm" onClick={onLogout} className="text-slate-600 hover:text-slate-900">
+            <LogOut size={16} className="mr-2" /> Log out
+          </Button>
         </div>
       </div>
 
@@ -59,15 +93,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
           </div>
           <div className="flex items-start justify-between relative z-10">
             <div>
-              <p className="text-teal-100 text-sm font-medium uppercase tracking-wide">Trips Saved</p>
-              <h3 className="text-3xl font-bold mt-1">{usedCountries} / {isUnlimited ? '∞' : limit}</h3>
+              <p className="text-teal-100 text-sm font-medium uppercase tracking-wide">{tripsLabel}</p>
+              <h3 className="text-3xl font-bold mt-1">{tripsUsed} / {isUnlimited ? 'Unlimited' : limit}</h3>
             </div>
             <Map className="text-teal-200 opacity-50" size={32} />
           </div>
           <div className="mt-4 w-full bg-black/20 rounded-full h-2 relative z-10">
              <div 
                className="bg-white/90 h-2 rounded-full transition-all" 
-               style={{ width: `${Math.min((usedCountries / (isUnlimited ? usedCountries + 10 : limit)) * 100, 100)}%` }} 
+               style={{ width: `${isUnlimited ? 100 : Math.min((tripsUsed / limit) * 100, 100)}%` }} 
              />
           </div>
           {isLimitReached && (
@@ -124,7 +158,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
       </div>
 
       {/* Kids List */}
-      <h2 className="text-xl font-bold text-slate-800 mb-4">Your Travelers</h2>
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <Users size={20} className="text-slate-400" />
+            Your Travelers
+          </h2>
+          <p className="text-sm text-slate-500">
+            {user.kids.length} of {isChildLimitUnlimited ? 'Unlimited' : childLimit} profile{childLimit !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <Button 
+          onClick={isChildLimitReached ? onUpgrade : onAddChild}
+          variant={isChildLimitReached ? "outline" : "primary"}
+          size="sm"
+        >
+          {isChildLimitReached ? (
+            <>
+              <Lock size={16} className="mr-2" /> Upgrade to Add More
+            </>
+          ) : (
+            <>
+              <Plus size={16} className="mr-2" /> Add Child
+            </>
+          )}
+        </Button>
+      </div>
       <div className="grid grid-cols-1 gap-4">
         {user.kids.map(kid => (
           <div key={kid.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col md:flex-row items-start md:items-center gap-6 shadow-sm hover:shadow-md transition-shadow">
@@ -165,9 +224,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
                <Button onClick={() => onViewPassport(kid.id)}>
                  Open Passport
                </Button>
+               {onEditChild && (
+                 <Button variant="ghost" size="sm" onClick={() => onEditChild(kid)} className="text-slate-400 hover:text-slate-600">
+                   Edit
+                 </Button>
+               )}
+               {onRemoveChild && user.kids.length > 1 && (
+                 <Button variant="ghost" size="sm" onClick={() => onRemoveChild(kid.id)} className="text-red-400 hover:text-red-600">
+                   Remove
+                 </Button>
+               )}
             </div>
           </div>
         ))}
+        
+        {/* Empty state if no kids */}
+        {user.kids.length === 0 && (
+          <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Users size={32} className="text-slate-400" />
+            </div>
+            <h3 className="font-bold text-slate-700 mb-2">No travelers yet</h3>
+            <p className="text-slate-500 text-sm mb-4">Add your first child to start their travel journey!</p>
+            <Button onClick={onAddChild}>
+              <Plus size={16} className="mr-2" /> Add Your First Traveler
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

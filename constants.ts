@@ -1,13 +1,22 @@
 
-import { Country, UserTier, Badge } from './types';
+import { UserTier, Badge } from './types';
 
 export const APP_NAME = "FunVoyage";
 
 export const TIER_LIMITS = {
   [UserTier.GUEST]: 1,
-  [UserTier.FREE]: 3,
+  [UserTier.FREE]: 1,
+  [UserTier.STARTER]: 3,
   [UserTier.PRO]: 10,
   [UserTier.ADVENTURER]: 9999 
+};
+
+export const TIER_CHILD_LIMITS = {
+  [UserTier.GUEST]: 1,
+  [UserTier.FREE]: 1,
+  [UserTier.STARTER]: 1,
+  [UserTier.PRO]: 3,
+  [UserTier.ADVENTURER]: 9999
 };
 
 export const BADGES: Badge[] = [
@@ -17,19 +26,6 @@ export const BADGES: Badge[] = [
   { id: 'empathy_2', name: 'Global Friend', description: 'Deeply connected with local culture.', icon: '🤝', category: 'empathy', threshold: 100 },
   { id: 'resilience_1', name: 'Brave Traveler', description: 'Handled a tough situation well.', icon: '💪', category: 'resilience', threshold: 30 },
   { id: 'problem_1', name: 'Idea Spark', description: 'Suggested a smart solution to a problem.', icon: '💡', category: 'problem_solving', threshold: 30 },
-];
-
-export const COUNTRIES: Country[] = [
-  { code: 'JP', name: 'Japan', flag: '🇯🇵' },
-  { code: 'FR', name: 'France', flag: '🇫🇷' },
-  { code: 'IT', name: 'Italy', flag: '🇮🇹' },
-  { code: 'TH', name: 'Thailand', flag: '🇹🇭' },
-  { code: 'MX', name: 'Mexico', flag: '🇲🇽' },
-  { code: 'ES', name: 'Spain', flag: '🇪🇸' },
-  { code: 'ID', name: 'Indonesia', flag: '🇮🇩' },
-  { code: 'VN', name: 'Vietnam', flag: '🇻🇳' },
-  { code: 'PT', name: 'Portugal', flag: '🇵🇹' },
-  { code: 'US', name: 'USA', flag: '🇺🇸' },
 ];
 
 export const getFlagEmoji = (countryCode: string) => {
@@ -73,6 +69,7 @@ General Rules:
 - Keep responses concise as this is a voice conversation.
 - Be encouraging but Socratic—ask follow-up questions that make them think.
 - Always be safe and positive.
+- Do not include emojis or emoticons; respond with plain words only.
 `;
 
 export const STAGE_PROMPTS = {

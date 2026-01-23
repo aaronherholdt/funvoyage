@@ -1,15 +1,19 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { UserTier, ParentUser, KidProfile, Session, SessionEntry, ConversationStage, SessionAnalysis, Badge, SessionMedia } from './types';
-import { TIER_LIMITS, COUNTRIES, APP_NAME, STAGE_PROMPTS, BADGES, getFlagEmoji, getAgeTheme } from './constants';
-import { generateNiaResponse, analyzeSession } from './services/geminiService';
+import { TIER_LIMITS, TIER_CHILD_LIMITS, APP_NAME, STAGE_PROMPTS, BADGES, getFlagEmoji, getAgeTheme } from './constants';
+import { generateNiaResponse, analyzeSession, AiRateLimitError, AI_RATE_LIMIT } from './services/geminiService';
+import { supabase } from './src/lib/supabaseClient';
+import { useAuthSession } from './src/hooks/useAuthSession';
 import { VoiceInterface } from './components/kid/VoiceInterface';
 import { DrawingCanvas } from './components/kid/DrawingCanvas';
 import { LocationPicker } from './components/kid/LocationPicker';
 import { Dashboard } from './components/parent/Dashboard';
 import { LandingPage } from './components/LandingPage';
 import { Button } from './components/Button';
-import { Plane, Mic, Lock, LogOut, Plus, ChevronLeft, Check, Star, ArrowRight, Loader2, Award, Crown, CheckCircle, Cloud, Map as MapIcon, Globe, Sparkles, Zap, Heart, BookOpen, ChevronRight } from 'lucide-react';
+import { AddChildModal } from './components/AddChildModal';
+import { KidSelectorModal } from './components/KidSelectorModal';
+import { Plane, Mic, Lock, LogOut, Plus, ChevronLeft, Check, Star, ArrowRight, Loader2, Award, Crown, CheckCircle, Cloud, Map as MapIcon, Globe, Sparkles, Zap, Heart, BookOpen, ChevronRight, AlertTriangle } from 'lucide-react';
 
 interface SpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -23,11 +27,20 @@ interface SpeechRecognition extends EventTarget {
   onerror: ((event: any) => void) | null;
 }
 
+type AppView = 'landing' | 'auth' | 'onboarding' | 'dashboard' | 'passport' | 'add_trip' | 'session' | 'completion' | 'upgrade' | 'memory_detail';
+
 const App: React.FC = () => {
   // --- GLOBAL STATE ---
   const [user, setUser] = useState<ParentUser | null>(null);
-  const [view, setView] = useState<'landing' | 'onboarding' | 'dashboard' | 'passport' | 'add_trip' | 'session' | 'completion' | 'upgrade' | 'memory_detail'>('landing');
+  const [view, setView] = useState<AppView>('landing');
+  const [postAuthView, setPostAuthView] = useState<AppView | null>(null);
   const [activeKidId, setActiveKidId] = useState<string | null>(null);
+  const [hasHydratedUser, setHasHydratedUser] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
+  const [authData, setAuthData] = useState({ parentName: '', email: '', password: '', confirmPassword: '' });
+  const [authError, setAuthError] = useState('');
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const { session: supabaseSession, loading: supabaseSessionLoading } = useAuthSession();
   
   // --- PASSPORT STATE ---
   const [passportPage, setPassportPage] = useState(0);
@@ -46,6 +59,8 @@ const App: React.FC = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [drawingMode, setDrawingMode] = useState(false);
   const [transcript, setTranscript] = useState(''); 
+  const [aiRateLimitMessage, setAiRateLimitMessage] = useState<string | null>(null);
+  const [aiRateLimitUntil, setAiRateLimitUntil] = useState<number | null>(null);
 
   // --- COMPLETION STATE ---
   const [sessionAnalysis, setSessionAnalysis] = useState<SessionAnalysis | null>(null);
@@ -54,13 +69,248 @@ const App: React.FC = () => {
   
   // --- MEMORY DETAIL STATE ---
   const [viewingSession, setViewingSession] = useState<Session | null>(null);
+  
+  // --- MULTI-CHILD STATE ---
+  const [showAddChildModal, setShowAddChildModal] = useState(false);
+  const [showKidSelector, setShowKidSelector] = useState(false);
+  const [editingKidId, setEditingKidId] = useState<string | null>(null);
+  const [addChildData, setAddChildData] = useState({ name: '', age: '' });
+
+  // --- BILLING STATE ---
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeLoadingTier, setUpgradeLoadingTier] = useState<UserTier | null>(null);
 
   // --- REFS ---
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const synthesisRef = useRef<SpeechSynthesis | null>(window.speechSynthesis);
+  const synthesisRef = useRef<SpeechSynthesis | null>(null);
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+        synthesisRef.current = window.speechSynthesis;
+    }
+  }, []);
+
   const transcriptBufferRef = useRef(''); 
+  const aiCallTimestampsRef = useRef<number[]>([]);
+  const aiSessionIdRef = useRef<string>('');
+
+  // --- AUTH HELPERS ---
+  const bufferToBase64 = (buffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+  };
+
+  const generateSalt = () => bufferToBase64(window.crypto.getRandomValues(new Uint8Array(16)).buffer);
+
+  const hashPassword = async (password: string, salt: string) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + salt);
+    const digest = await window.crypto.subtle.digest('SHA-256', data);
+    return bufferToBase64(digest);
+  };
+
+  // --- AI RATE LIMITING HELPERS ---
+  const setRateLimitWarning = (retryAfterMs?: number) => {
+    const waitMs = retryAfterMs && retryAfterMs > 0 ? retryAfterMs : AI_RATE_LIMIT.windowMs;
+    setAiRateLimitMessage(`Nia needs a quick breather. Try again in ${Math.ceil(waitMs / 1000)}s.`);
+    setAiRateLimitUntil(Date.now() + waitMs);
+  };
+
+  const canInvokeAi = () => {
+    const now = Date.now();
+    if (aiRateLimitUntil && aiRateLimitUntil > now) {
+      setRateLimitWarning(aiRateLimitUntil - now);
+      return false;
+    }
+
+    const windowStart = now - AI_RATE_LIMIT.windowMs;
+    aiCallTimestampsRef.current = aiCallTimestampsRef.current.filter(ts => ts >= windowStart);
+    if (aiCallTimestampsRef.current.length >= AI_RATE_LIMIT.maxRequestsPerMinute) {
+      const oldest = aiCallTimestampsRef.current[0];
+      const retryAfterMs = AI_RATE_LIMIT.windowMs - (now - oldest);
+      setRateLimitWarning(retryAfterMs);
+      return false;
+    }
+
+    aiCallTimestampsRef.current.push(now);
+    setAiRateLimitMessage(null);
+    setAiRateLimitUntil(null);
+    return true;
+  };
+
+  const fetchRemoteTier = async (userId: string): Promise<UserTier | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('tier')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Failed to fetch remote tier', error);
+        return null;
+      }
+
+      const remoteTier = data?.tier as UserTier | undefined;
+      return remoteTier && Object.values(UserTier).includes(remoteTier) ? remoteTier : null;
+    } catch (err) {
+      console.warn('Unexpected error fetching remote tier', err);
+      return null;
+    }
+  };
+
+  // --- SUPABASE KIDS SYNC ---
+  const fetchRemoteKids = async (userId: string): Promise<KidProfile[] | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('kids')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Failed to fetch remote kids', error);
+        return null;
+      }
+
+      if (data?.kids && Array.isArray(data.kids)) {
+        return data.kids as KidProfile[];
+      }
+      return null;
+    } catch (err) {
+      console.warn('Unexpected error fetching remote kids', err);
+      return null;
+    }
+  };
+
+  const syncKidsToSupabase = async (userId: string, kids: KidProfile[]) => {
+    try {
+      // Fetch current tier & kids from Supabase to enforce server-side limits
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('tier,kids')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profileError) {
+        console.warn('Failed to fetch profile before syncing kids', profileError);
+      }
+
+      const remoteTier = (profile?.tier as UserTier) || UserTier.FREE;
+      const childLimit = TIER_CHILD_LIMITS[remoteTier];
+      const isUnlimited = childLimit >= 9999;
+      const existingKids = Array.isArray(profile?.kids) ? (profile!.kids as KidProfile[]) : [];
+
+      // Merge to preserve remote source of truth, then enforce limit
+      const mergedKids = mergeKids(existingKids, kids);
+      const kidsToPersist = isUnlimited ? mergedKids : mergedKids.slice(0, childLimit);
+      const wasTrimmed = !isUnlimited && mergedKids.length > childLimit;
+      if (wasTrimmed) {
+        console.warn('Child limit exceeded for tier, trimming before upsert', { childLimit, attempted: mergedKids.length });
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ 
+          id: userId, 
+          tier: remoteTier,
+          kids: kidsToPersist,
+          updated_at: new Date().toISOString()
+        }, { 
+          onConflict: 'id' 
+        });
+
+      if (error) {
+        console.warn('Failed to sync kids to Supabase', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Unexpected error syncing kids', err);
+      return false;
+    }
+  };
+
+  // Merge remote and local kids - remote takes precedence for existing IDs
+  const mergeKids = (localKids: KidProfile[], remoteKids: KidProfile[]): KidProfile[] => {
+    const kidMap = new Map<string, KidProfile>();
+    
+    // Add local kids first
+    localKids.forEach(kid => kidMap.set(kid.id, kid));
+    
+    // Remote kids override local (they're the source of truth)
+    remoteKids.forEach(kid => kidMap.set(kid.id, kid));
+    
+    return Array.from(kidMap.values());
+  };
 
   // --- INITIALIZATION ---
+  useEffect(() => {
+    if (hasHydratedUser || supabaseSessionLoading) return;
+
+    const storedUser = localStorage.getItem('funvoyage_user');
+    const storedKidId = localStorage.getItem('funvoyage_activeKid');
+    const storedAiSession = localStorage.getItem('funvoyage_ai_session');
+
+    const newAiSessionId = storedAiSession || (crypto.randomUUID ? crypto.randomUUID() : `anon-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    aiSessionIdRef.current = newAiSessionId;
+    localStorage.setItem('funvoyage_ai_session', newAiSessionId);
+
+    // Skip local hydration when a Supabase session exists so the server stays the source of truth; keep local storage for guests/offline users.
+    if (!supabaseSession && storedUser) {
+      try {
+        const parsedUser: ParentUser = JSON.parse(storedUser);
+        const sanitizedTier = parsedUser.tier === UserTier.GUEST ? UserTier.GUEST : UserTier.FREE;
+        const sanitizedUser = { ...parsedUser, tier: sanitizedTier };
+        setUser(sanitizedUser);
+        setActiveKidId(storedKidId || sanitizedUser.kids?.[0]?.id || null);
+        setView('dashboard');
+      } catch (err) {
+        console.error('Failed to hydrate stored user', err);
+      }
+    }
+
+    setHasHydratedUser(true);
+  }, [supabaseSession, supabaseSessionLoading, hasHydratedUser]);
+
+  useEffect(() => {
+    if (!hasHydratedUser) return;
+    if (user) {
+      localStorage.setItem('funvoyage_user', JSON.stringify(user));
+      if (user.email) {
+        const accountsRaw = localStorage.getItem('funvoyage_accounts');
+        const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
+        const existing = accounts[user.email.toLowerCase()] || {};
+        accounts[user.email.toLowerCase()] = { ...existing, user };
+        localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+      }
+    }
+  }, [user, hasHydratedUser]);
+
+  useEffect(() => {
+    if (!hasHydratedUser) return;
+    if (activeKidId) {
+      localStorage.setItem('funvoyage_activeKid', activeKidId);
+    }
+  }, [activeKidId, hasHydratedUser]);
+
+  useEffect(() => {
+    if (!aiRateLimitUntil) return;
+    const remaining = aiRateLimitUntil - Date.now();
+    if (remaining <= 0) {
+      setAiRateLimitMessage(null);
+      setAiRateLimitUntil(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setAiRateLimitMessage(null);
+      setAiRateLimitUntil(null);
+    }, remaining);
+    return () => clearTimeout(timeout);
+  }, [aiRateLimitUntil]);
+
   useEffect(() => {
     if ('webkitSpeechRecognition' in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition;
@@ -72,6 +322,13 @@ const App: React.FC = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (view === 'upgrade') {
+      setUpgradeError(null);
+      setUpgradeLoadingTier(null);
+    }
+  }, [view]);
 
   useEffect(() => {
     if (!recognitionRef.current) return;
@@ -108,14 +365,108 @@ const App: React.FC = () => {
 
   }, [stage, activeSession, history]); 
 
+  useEffect(() => {
+    const syncSupabaseUser = async () => {
+      if (!supabaseSession?.user) return;
+      const email = supabaseSession.user.email?.toLowerCase();
+      if (!email) return;
+
+      const accountsRaw = localStorage.getItem('funvoyage_accounts');
+      const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
+      const existing = accounts[email]?.user as ParentUser | undefined;
+      const guestUser = user && !user.email ? user : null;
+      const currentUser = user?.email === email ? user : existing;
+
+      // Fetch remote data (tier and kids)
+      const [supabaseTier, remoteKids] = await Promise.all([
+        fetchRemoteTier(supabaseSession.user.id),
+        fetchRemoteKids(supabaseSession.user.id)
+      ]);
+      
+      const guestTier = guestUser ? (guestUser.tier === UserTier.GUEST ? UserTier.FREE : guestUser.tier) : null;
+
+      const metadata = supabaseSession.user
+        .user_metadata as { full_name?: string; name?: string } | null;
+      const resolvedTier = supabaseTier || currentUser?.tier || guestTier || UserTier.FREE;
+
+      // Merge kids: remote > local > guest > default
+      const localKids = currentUser?.kids || guestUser?.kids || [];
+      const defaultKid: KidProfile = {
+        id: `k-${Date.now()}`,
+        name: 'Traveler',
+        age: 8,
+        avatar: '🧑‍🚀',
+        sessions: [],
+        totalPoints: { curiosity: 0, empathy: 0, resilience: 0, problem_solving: 0 },
+        badges: []
+      };
+      
+      let resolvedKids: KidProfile[];
+      if (remoteKids && remoteKids.length > 0) {
+        // Remote exists - merge with local (remote takes precedence)
+        resolvedKids = mergeKids(localKids, remoteKids);
+      } else if (localKids.length > 0) {
+        // No remote, use local
+        resolvedKids = localKids;
+      } else {
+        // No kids anywhere, create default
+        resolvedKids = [defaultKid];
+      }
+
+      // Enforce child limits based on tier (drop extras for under-tier users)
+      const childLimit = TIER_CHILD_LIMITS[resolvedTier];
+      const isChildUnlimited = childLimit >= 9999;
+      const enforcedKids = isChildUnlimited ? resolvedKids : resolvedKids.slice(0, childLimit);
+      const wasChildListTrimmed = !isChildUnlimited && resolvedKids.length > childLimit;
+
+      const syncedUser: ParentUser = {
+        id: supabaseSession.user.id,
+        name: currentUser?.name || metadata?.full_name || metadata?.name || supabaseSession.user.email || 'Parent Explorer',
+        email,
+        tier: resolvedTier,
+        kids: enforcedKids
+      };
+
+      // Sync kids to Supabase if local has data that remote doesn't
+      if (!remoteKids || remoteKids.length === 0 || localKids.length > remoteKids.length) {
+        await syncKidsToSupabase(supabaseSession.user.id, enforcedKids);
+      }
+
+      accounts[email] = { ...(accounts[email] || {}), user: syncedUser };
+      localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+      setUser(syncedUser);
+      setActiveKidId(enforcedKids[0]?.id || null);
+      setView(wasChildListTrimmed ? 'upgrade' : (postAuthView || 'dashboard'));
+      setPostAuthView(null);
+    };
+
+    syncSupabaseUser();
+  }, [supabaseSession, postAuthView]);
+
   // --- ACTIONS ---
 
+  const handleStartAuth = (mode: 'login' | 'signup') => {
+      setAuthMode(mode);
+      setAuthError('');
+      setPostAuthView(null);
+      setAuthData(prev => ({ ...prev, password: '', confirmPassword: '' }));
+      if (mode === 'signup') {
+        setOnboardingData({ name: '', age: '' });
+      }
+      setView('auth');
+  };
+
   const handleStartOnboarding = () => {
+      setAuthMode('signup');
+      setAuthError('');
+      setPostAuthView(null);
+      setAuthData({ parentName: '', email: '', password: '', confirmPassword: '' });
+      setOnboardingData({ name: '', age: '' });
       setView('onboarding');
   };
 
   const handleCompleteOnboarding = () => {
-      const kidId = 'k1';
+      const kidId = `k-${Date.now()}`;
       const newKid: KidProfile = {
           id: kidId,
           name: onboardingData.name,
@@ -127,35 +478,351 @@ const App: React.FC = () => {
       };
 
       const newUser: ParentUser = {
-          id: 'u1',
-          name: 'Parent',
-          email: null,
-          tier: UserTier.GUEST,
+          id: authData.email ? `u-${authData.email}` : `u-${Date.now()}`,
+          name: authData.parentName || 'Parent Explorer',
+          email: authData.email || null,
+          tier: authData.email ? UserTier.FREE : UserTier.GUEST,
           kids: [newKid]
       };
       
+      if (newUser.email) {
+        const accountsRaw = localStorage.getItem('funvoyage_accounts');
+        const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
+        const salt = accounts[newUser.email]?.passwordSalt || generateSalt();
+        const passwordHash = accounts[newUser.email]?.passwordHash || '';
+        accounts[newUser.email] = { user: newUser, passwordSalt: salt, passwordHash };
+        localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+      }
       setUser(newUser);
       setActiveKidId(kidId);
-      setView('passport'); // Go straight to kid mode for "Try Now" flow
+      if (!authData.email) {
+        setNewTripData({ countryCode: '', city: '' });
+        setView('add_trip'); // Guests jump straight into trying the experience
+        return;
+      }
+      setView('passport'); // Go straight to kid mode for signed-in flow
+  };
+
+  const handleAuthSubmit = async () => {
+    const email = authData.email.trim().toLowerCase();
+    if (!email) {
+      setAuthError('Please enter your email to continue.');
+      return;
+    }
+    setAuthData(prev => ({ ...prev, email }));
+    const accountsRaw = localStorage.getItem('funvoyage_accounts');
+    const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
+    if (authMode === 'login') {
+      const existing = accounts[email];
+      if (!existing) {
+        setAuthError('No account found for that email. Sign up to start fresh.');
+        return;
+      }
+      if (!authData.password) {
+        setAuthError('Enter your password to continue.');
+        return;
+      }
+      if (existing.passwordSalt && existing.passwordHash) {
+        const computed = await hashPassword(authData.password, existing.passwordSalt);
+        if (computed !== existing.passwordHash) {
+          setAuthError('Incorrect password. Try again.');
+          return;
+        }
+        setAuthError('');
+        const resolvedUser: ParentUser = existing.user || existing;
+        setUser(resolvedUser);
+        setActiveKidId(resolvedUser.kids?.[0]?.id || null);
+        setView(postAuthView || 'dashboard');
+        setPostAuthView(null);
+        return;
+      }
+      if (authData.password.length < 8) {
+        setAuthError('Set a new password (min 8 characters) to secure your account.');
+        return;
+      }
+      const salt = generateSalt();
+      const passwordHash = await hashPassword(authData.password, salt);
+      accounts[email] = { ...existing, user: existing.user || existing, passwordSalt: salt, passwordHash };
+      localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+      setAuthError('');
+      const resolvedUser: ParentUser = existing.user || existing;
+      setUser(resolvedUser);
+      setActiveKidId(resolvedUser.kids?.[0]?.id || null);
+      setView(postAuthView || 'dashboard');
+      setPostAuthView(null);
+      return;
+    }
+    if (authData.password.length < 8) {
+      setAuthError('Password must be at least 8 characters.');
+      return;
+    }
+    if (authData.password !== authData.confirmPassword) {
+      setAuthError('Passwords do not match.');
+      return;
+    }
+    const salt = generateSalt();
+    const passwordHash = await hashPassword(authData.password, salt);
+    let nextUser: ParentUser;
+    if (user && !user.email) {
+      nextUser = { 
+        ...user, 
+        email, 
+        name: authData.parentName || user.name,
+        tier: user.tier === UserTier.GUEST ? UserTier.FREE : user.tier 
+      };
+    } else if (accounts[email]?.user) {
+      nextUser = { ...(accounts[email].user as ParentUser) };
+    } else {
+      nextUser = {
+        id: `u-${email}`,
+        name: authData.parentName || 'Parent Explorer',
+        email,
+        tier: UserTier.FREE,
+        kids: []
+      };
+    }
+    accounts[email] = { ...(accounts[email] || {}), passwordSalt: salt, passwordHash, user: nextUser };
+    localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+    setAuthError('');
+    setUser(nextUser);
+    setActiveKidId(nextUser.kids?.[0]?.id || null);
+    const hasKids = nextUser.kids && nextUser.kids.length > 0;
+    if (hasKids) {
+      setView(postAuthView || 'dashboard');
+      setPostAuthView(null);
+    } else {
+      setView('onboarding');
+      setPostAuthView(null);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Supabase sign out failed', err);
+    }
+    setUser(null);
+    setActiveKidId(null);
+    setActiveSession(null);
+    setSessionAnalysis(null);
+    setHistory([]);
+    setStage('intro');
+    setPassportPage(0);
+    setNewBadges([]);
+    setDrawingMode(false);
+    setIsAnalyzing(false);
+    setPostAuthView(null);
+    setAuthData({ parentName: '', email: '', password: '', confirmPassword: '' });
+    setOnboardingData({ name: '', age: '' });
+    setView('landing');
+    localStorage.removeItem('funvoyage_user');
+    localStorage.removeItem('funvoyage_activeKid');
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setAuthError('');
+      setOauthLoading(true);
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        setOauthLoading(false);
+      }
+    } catch (err: any) {
+      setAuthError(err.message ?? 'Google sign-in failed. Try again.');
+      setOauthLoading(false);
+    }
+  };
+
+  // --- MULTI-CHILD HANDLERS ---
+  const getRandomAvatar = () => {
+    const avatars = ['🧒', '👦', '👧', '🧒🏻', '👦🏻', '👧🏻', '🧒🏽', '👦🏽', '👧🏽', '🧑‍🚀', '🧑‍🎨', '🧑‍🔬'];
+    return avatars[Math.floor(Math.random() * avatars.length)];
+  };
+
+  const handleAddChildClick = () => {
+    if (!user) return;
+    
+    const childLimit = TIER_CHILD_LIMITS[user.tier];
+    
+    if (user.kids.length >= childLimit) {
+      setView('upgrade');
+      return;
+    }
+    
+    setAddChildData({ name: '', age: '' });
+    setEditingKidId(null);
+    setShowAddChildModal(true);
+  };
+
+  const handleEditChildClick = (kid: KidProfile) => {
+    setAddChildData({ name: kid.name, age: kid.age.toString() });
+    setEditingKidId(kid.id);
+    setShowAddChildModal(true);
+  };
+
+  const handleAddChildSubmit = async () => {
+    if (!user || !addChildData.name.trim() || !addChildData.age) return;
+    
+    const age = parseInt(addChildData.age);
+    if (age < 4 || age > 18) return;
+
+    // Defensive: enforce tier child limit at submit time
+    const childLimit = TIER_CHILD_LIMITS[user.tier];
+    const isUnlimited = childLimit >= 9999;
+    const isAddingNewKid = !editingKidId;
+    if (!isUnlimited && isAddingNewKid && user.kids.length >= childLimit) {
+      setShowAddChildModal(false);
+      setView('upgrade');
+      return;
+    }
+
+    let updatedKids: KidProfile[];
+    let newKidId: string | null = null;
+
+    if (editingKidId) {
+      // Edit existing child
+      updatedKids = user.kids.map(k => 
+        k.id === editingKidId 
+          ? { ...k, name: addChildData.name.trim(), age }
+          : k
+      );
+    } else {
+      // Add new child
+      newKidId = `k-${Date.now()}`;
+      const newKid: KidProfile = {
+        id: newKidId,
+        name: addChildData.name.trim(),
+        age,
+        avatar: getRandomAvatar(),
+        sessions: [],
+        totalPoints: { curiosity: 0, empathy: 0, resilience: 0, problem_solving: 0 },
+        badges: []
+      };
+      updatedKids = [...user.kids, newKid];
+    }
+
+    // Update local state
+    const updatedUser = { ...user, kids: updatedKids };
+    setUser(updatedUser);
+    
+    if (newKidId) {
+      setActiveKidId(newKidId);
+    }
+
+    // Sync to Supabase if user is authenticated
+    if (supabaseSession?.user?.id) {
+      await syncKidsToSupabase(supabaseSession.user.id, updatedKids);
+    }
+    
+    setShowAddChildModal(false);
+    setAddChildData({ name: '', age: '' });
+    setEditingKidId(null);
+  };
+
+  const handleRemoveChild = async (kidId: string) => {
+    if (!user || user.kids.length <= 1) {
+      alert("You must have at least one traveler profile.");
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to remove this traveler? Their trips will be deleted.`)) {
+      return;
+    }
+    
+    const updatedKids = user.kids.filter(k => k.id !== kidId);
+    
+    // Update local state
+    setUser(prev => {
+      if (!prev) return null;
+      return { ...prev, kids: updatedKids };
+    });
+    
+    if (activeKidId === kidId) {
+      setActiveKidId(updatedKids[0]?.id || null);
+    }
+
+    // Sync to Supabase if user is authenticated
+    if (supabaseSession?.user?.id) {
+      await syncKidsToSupabase(supabaseSession.user.id, updatedKids);
+    }
+  };
+
+  const handleKidSelectedForTrip = (kidId: string) => {
+    setActiveKidId(kidId);
+    setShowKidSelector(false);
+    setNewTripData({ countryCode: '', city: '' });
+    setView('add_trip');
+  };
+
+  const countTripsThisMonth = (kids: KidProfile[]) => {
+    const now = new Date();
+    return kids.reduce((sum, kid) => {
+      const monthlyTrips = kid.sessions.filter(session => {
+        const date = new Date(session.date);
+        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      }).length;
+      return sum + monthlyTrips;
+    }, 0);
+  };
+
+  const getTripsUsedForTier = (currentUser: ParentUser) => {
+    if (currentUser.tier === UserTier.STARTER) {
+      return countTripsThisMonth(currentUser.kids);
+    }
+    return currentUser.kids.reduce((sum, k) => sum + k.sessions.length, 0);
+  };
+
+  const requireAuthForPassport = (kidId?: string) => {
+    if (kidId) setActiveKidId(kidId);
+    if (user?.email) {
+      setPostAuthView(null);
+      setView('passport');
+      return;
+    }
+    setAuthMode('signup');
+    setAuthError('');
+    setPostAuthView('passport');
+    setView('auth');
   };
 
   const handleAddTripClick = () => {
     if (!user) return;
-    const kid = user.kids.find(k => k.id === activeKidId);
+    
+    // Check trip limits first
+    const tripsUsed = getTripsUsedForTier(user);
     const limit = TIER_LIMITS[user.tier];
-    const totalCountries = kid?.sessions.length || 0;
 
-    if (user.tier !== UserTier.ADVENTURER && totalCountries >= limit && user.tier !== UserTier.GUEST) {
+    if (user.tier !== UserTier.ADVENTURER && tripsUsed >= limit) {
       setView('upgrade');
       return;
     }
-    setNewTripData({ countryCode: COUNTRIES[0].code, city: '' });
+    
+    // If multiple kids, show selector first
+    if (user.kids.length > 1) {
+      setShowKidSelector(true);
+      return;
+    }
+    
+    // Single kid - proceed directly
+    const kid = user.kids[0];
+    if (!kid) return;
+    
+    setActiveKidId(kid.id);
+    setNewTripData({ countryCode: '', city: '' });
     setView('add_trip');
   };
 
   const handleStartSession = (countryCode: string, city: string, countryName: string) => {
-    const country = COUNTRIES.find(c => c.code === countryCode);
-    const finalCountryName = countryName || country?.name || countryCode;
+    const finalCountryName = countryName || countryCode || 'Unknown location';
 
     const newSession: Partial<Session> = {
       id: Date.now().toString(),
@@ -169,12 +836,39 @@ const App: React.FC = () => {
     setActiveSession(newSession);
     setHistory([]);
     setStage('intro');
+    setAiRateLimitMessage(null);
+    setAiRateLimitUntil(null);
+    aiCallTimestampsRef.current = [];
     setView('session');
     
     setTimeout(() => {
       const kid = user?.kids.find(k => k.id === activeKidId);
       processAIStage(finalCountryName, city, [], 'intro', kid?.age || 8);
     }, 1000);
+  };
+
+  const handleExitSession = () => {
+    recognitionRef.current?.stop();
+    recognitionRef.current?.abort?.();
+    setIsListening(false);
+    setIsSpeaking(false);
+    setActiveSession(null);
+    setHistory([]);
+    setStage('intro');
+    setDrawingMode(false);
+    setSessionAnalysis(null);
+    setNewBadges([]);
+    setIsAnalyzing(false);
+    setAiRateLimitMessage(null);
+    setAiRateLimitUntil(null);
+    aiCallTimestampsRef.current = [];
+    transcriptBufferRef.current = '';
+    setTranscript('');
+    if (user?.email) {
+      requireAuthForPassport();
+    } else {
+      setView('add_trip');
+    }
   };
 
   const processAIStage = async (
@@ -191,17 +885,32 @@ const App: React.FC = () => {
     let prompt = STAGE_PROMPTS[currentStage].replace(/{country}/g, locationContext);
     if (userText) prompt += ` The child just said: "${userText}".`;
 
-    const responseText = await generateNiaResponse(currentHistory, prompt, kidAge);
-    
-    const aiEntry: SessionEntry = { role: 'model', text: responseText, timestamp: Date.now() };
-    setHistory(prev => [...prev, aiEntry]);
-    speak(responseText);
+    if (!canInvokeAi()) return;
+
+    try {
+      const responseText = await generateNiaResponse(currentHistory, prompt, kidAge, aiSessionIdRef.current);
+      const aiEntry: SessionEntry = { role: 'model', text: responseText, timestamp: Date.now() };
+      setHistory(prev => [...prev, aiEntry]);
+      speak(responseText);
+    } catch (err) {
+      if (err instanceof AiRateLimitError) {
+        setRateLimitWarning(err.retryAfterMs);
+        return;
+      }
+      console.error('Nia respond error:', err);
+      setAiRateLimitMessage("Nia's taking a short pause. Try again in a moment.");
+    }
   };
 
   const speak = (text: string) => {
     if (synthesisRef.current) {
       synthesisRef.current.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      const cleanForSpeech = (input: string) => {
+        // Strip emoji and collapse whitespace so TTS doesn't spell them out
+        const noEmoji = input.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]/gu, '');
+        return noEmoji.replace(/\s{2,}/g, ' ').trim();
+      };
+      const utterance = new SpeechSynthesisUtterance(cleanForSpeech(text));
       const voices = synthesisRef.current.getVoices();
       const preferredVoice = voices.find(v => v.name.includes('Female') || v.name.includes('Google US English'));
       if (preferredVoice) utterance.voice = preferredVoice;
@@ -257,22 +966,48 @@ const App: React.FC = () => {
   };
 
   const handleFinishAndAnalyze = async (finalHistory: SessionEntry[], finalMedia?: SessionMedia[]) => {
+    if (!canInvokeAi()) return;
+
     setView('completion'); 
     setIsAnalyzing(true);
     
     const kid = user!.kids.find(k => k.id === activeKidId)!;
+    const canSaveMedia = user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER || user!.tier === UserTier.FREE || user!.tier === UserTier.GUEST;
 
     // 1. Analyze Session
-    const analysis = await analyzeSession(
+    let analysis: SessionAnalysis | null = null;
+    try {
+      analysis = await analyzeSession(
         finalHistory, 
         activeSession?.countryName || '', 
         activeSession?.city,
-        kid.age
-    );
+        kid.age,
+        aiSessionIdRef.current
+      );
+    } catch (err) {
+      if (err instanceof AiRateLimitError) {
+        setRateLimitWarning(err.retryAfterMs);
+        setIsAnalyzing(false);
+        setView('session');
+        return;
+      }
+      console.error('Nia analyze error:', err);
+      setIsAnalyzing(false);
+      if (user?.email) {
+        setView('passport');
+      } else {
+        setView('dashboard');
+      }
+      return;
+    }
     
     if (!analysis) {
         setIsAnalyzing(false);
-        setView('passport');
+        if (user?.email) {
+          setView('passport');
+        } else {
+          setView('dashboard');
+        }
         return;
     }
 
@@ -307,43 +1042,87 @@ const App: React.FC = () => {
       analysis: analysis,
       completed: true,
       earnedBadges: newlyUnlockedBadges,
-      media: finalMedia || activeSession?.media || []
+      media: canSaveMedia ? (finalMedia || activeSession?.media || []) : []
     };
+
+    const updatedKids = user!.kids.map(k => {
+      if (k.id === activeKidId) {
+        return {
+          ...k,
+          sessions: [completedSession, ...k.sessions],
+          totalPoints: (user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER) ? newPoints : k.totalPoints,
+          badges: [...k.badges, ...newlyUnlockedBadges]
+        };
+      }
+      return k;
+    });
 
     setUser(prev => {
       if (!prev) return null;
-      return {
-        ...prev,
-        kids: prev.kids.map(k => {
-          if (k.id === activeKidId) {
-            return {
-                ...k,
-                sessions: [completedSession, ...k.sessions],
-                totalPoints: (prev.tier === UserTier.PRO || prev.tier === UserTier.ADVENTURER) ? newPoints : k.totalPoints,
-                badges: [...k.badges, ...newlyUnlockedBadges]
-            };
-          }
-          return k;
-        })
-      };
+      return { ...prev, kids: updatedKids };
     });
+
+    // Sync to Supabase if user is authenticated
+    if (supabaseSession?.user?.id) {
+      await syncKidsToSupabase(supabaseSession.user.id, updatedKids);
+    }
 
     setIsAnalyzing(false);
     speak(analysis.summary);
   };
 
-  const handleUpgrade = (tier: UserTier) => {
-    setUser(prev => prev ? ({ ...prev, tier: tier }) : null);
-    setView('dashboard');
+  const handleUpgrade = async (tier: UserTier) => {
+    // Only paid tiers are upgradable via PayPal
+    if (![UserTier.STARTER, UserTier.PRO, UserTier.ADVENTURER].includes(tier)) {
+      return;
+    }
+
+    if (user?.tier === tier) {
+      setView('dashboard');
+      return;
+    }
+
+    if (supabaseSessionLoading) {
+      setUpgradeError('Hold on while we verify your account...');
+      return;
+    }
+
+    if (!supabaseSession?.user?.id) {
+      setPostAuthView('upgrade');
+      setUpgradeError('Please sign in to upgrade your plan.');
+      setView('auth');
+      return;
+    }
+
+    try {
+      setUpgradeError(null);
+      setUpgradeLoadingTier(tier);
+      window.location.href = `/api/paypal/checkout?tier=${tier}`;
+    } catch (err) {
+      console.error('Failed to start upgrade checkout', err);
+      setUpgradeError('Could not start PayPal checkout. Please try again.');
+      setUpgradeLoadingTier(null);
+    }
   };
 
   // --- RENDER HELPERS ---
 
   const renderOnboarding = () => (
       <div className="min-h-screen bg-indigo-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full border border-indigo-100">
-              <h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">Welcome Aboard!</h2>
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full border border-indigo-100 relative">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setView('landing')} 
+                className="absolute left-4 top-4 text-slate-500 hover:text-slate-800"
+              >
+                <ChevronLeft size={16} className="mr-2" /> Return to homepage
+              </Button>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2 text-center mt-4">Welcome Aboard!</h2>
               <p className="text-slate-500 text-center mb-8">Tell us a bit about the traveler.</p>
+              {authData.email && (
+                <p className="text-center text-xs text-teal-600 font-semibold mb-4">Signed in as {authData.email}</p>
+              )}
               
               <div className="space-y-4">
                   <div>
@@ -382,6 +1161,155 @@ const App: React.FC = () => {
       </div>
   );
 
+  const renderAuth = () => {
+    const isLogin = authMode === 'login';
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center p-4">
+        <div className="max-w-5xl w-full grid md:grid-cols-2 gap-6 items-stretch">
+          <div className="bg-white/5 border border-white/10 rounded-3xl p-8 text-white shadow-2xl flex flex-col justify-between">
+             <div>
+               <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider mb-4">
+                 <Sparkles size={14} /> First Trip Is Free
+               </div>
+               <h2 className="text-3xl font-bold leading-tight mb-4">Your family's travel journal, ready in 60 seconds.</h2>
+               <p className="text-white/80 text-sm leading-relaxed mb-6">
+                 Take your first free trip with zero sign-up. After you finish, create your passport to save it and unlock more adventures.
+               </p>
+               <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-300"><Check size={16} /></div>
+                    <p className="text-sm text-white">Try one trip with no account. Create your passport to continue.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-200"><Heart size={16} /></div>
+                    <p className="text-sm text-white">Parents stay in control. Kids just explore.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-200"><Zap size={16} /></div>
+                    <p className="text-sm text-white">Voice-first, memory-rich journeys, saved forever.</p>
+                  </div>
+               </div>
+             </div>
+             <div className="pt-6">
+               <p className="text-xs uppercase tracking-[0.2em] text-white/50">Conversion Ready</p>
+               <p className="font-semibold text-white">Beautiful onboarding. Zero friction.</p>
+             </div>
+          </div>
+
+          <div className="bg-white rounded-3xl p-8 shadow-2xl border border-slate-100 flex flex-col">
+             <div className="flex items-center gap-2 mb-6 bg-slate-100 p-1 rounded-full">
+               <button 
+                  onClick={() => { setAuthMode('signup'); setAuthError(''); }} 
+                  className={`flex-1 py-2 px-3 rounded-full text-sm font-bold transition-all ${!isLogin ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
+                >
+                  Create account
+               </button>
+               <button 
+                  onClick={() => { setAuthMode('login'); setAuthError(''); }} 
+                  className={`flex-1 py-2 px-3 rounded-full text-sm font-bold transition-all ${isLogin ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
+                >
+                  Log in
+               </button>
+             </div>
+            
+             {postAuthView === 'passport' && (
+               <div className="mb-4 text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2">
+                 We saved your test trip. Create your passport to keep it and unlock your next adventures.
+               </div>
+             )}
+
+             {!isLogin && (
+               <div className="mb-4">
+                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Parent Name</label>
+                 <input 
+                   type="text"
+                   value={authData.parentName}
+                   onChange={(e) => setAuthData(prev => ({ ...prev, parentName: e.target.value }))}
+                   className="w-full p-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none"
+                   placeholder="Alex Parker"
+                 />
+               </div>
+             )}
+
+             <div className="mb-4">
+                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Email</label>
+                 <input 
+                   type="email"
+                   value={authData.email}
+                   onChange={(e) => setAuthData(prev => ({ ...prev, email: e.target.value }))}
+                   className="w-full p-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none"
+                   placeholder="you@example.com"
+                 />
+             </div>
+
+             <div className="mb-4">
+                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
+                 <input 
+                   type="password"
+                   value={authData.password}
+                   onChange={(e) => setAuthData(prev => ({ ...prev, password: e.target.value }))}
+                   className="w-full p-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none"
+                   placeholder={isLogin ? "Enter your password" : "At least 8 characters"}
+                 />
+                 {!isLogin && (
+                   <p className="text-[11px] text-slate-500 mt-1">We hash + salt on your device. Needed if you lose this device.</p>
+                 )}
+             </div>
+
+             {!isLogin && (
+               <div className="mb-4">
+                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Confirm Password</label>
+                 <input 
+                   type="password"
+                   value={authData.confirmPassword}
+                   onChange={(e) => setAuthData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                   className="w-full p-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none"
+                   placeholder="Re-enter password"
+                 />
+              </div>
+             )}
+
+             {authError && (
+               <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                  {authError}
+               </div>
+             )}
+
+             <Button fullWidth size="lg" onClick={handleAuthSubmit} className="mb-3">
+               {isLogin ? 'Log in and continue' : 'Start your free test trip'}
+             </Button>
+             <div className="flex items-center gap-2 my-3">
+               <div className="flex-1 h-px bg-slate-200"></div>
+               <span className="text-xs uppercase tracking-wide text-slate-400">or</span>
+               <div className="flex-1 h-px bg-slate-200"></div>
+             </div>
+
+             <Button 
+               fullWidth 
+               variant="outline" 
+               disabled={oauthLoading || supabaseSessionLoading}
+               onClick={handleGoogleSignIn}
+               className="mb-3 flex items-center justify-center gap-2"
+             >
+               <svg aria-hidden="true" focusable="false" role="img" viewBox="0 0 24 24" className="w-5 h-5">
+                 <path fill="#EA4335" d="M12 10.2v3.6h5.1a4.4 4.4 0 0 1-1.9 2.9l3 2.3c1.8-1.6 2.8-4 2.8-6.9 0-.7-.1-1.3-.2-1.9H12z"/>
+                 <path fill="#34A853" d="M6.6 14.3l-.9.7-2.4 1.8A9.8 9.8 0 0 0 12 22c2.7 0 5-.9 6.7-2.5l-3-2.3c-.8.5-1.8.8-2.9.8-2.2 0-4-1.5-4.7-3.5z"/>
+                 <path fill="#4A90E2" d="M3.3 7.2A9.8 9.8 0 0 0 2 12c0 1.5.3 2.9.9 4.1l3.7-2.8a5.8 5.8 0 0 1 0-2.8z"/>
+                 <path fill="#FBBC05" d="M12 5.2c1.5 0 2.9.5 3.9 1.4l2.9-2.9A9.8 9.8 0 0 0 12 2a9.8 9.8 0 0 0-8.7 5.2l3.7 2.8A5.8 5.8 0 0 1 12 5.2z"/>
+               </svg>
+               {oauthLoading ? 'Connecting…' : 'Continue with Google'}
+             </Button>
+             {!isLogin && (
+               <p className="text-xs text-center text-slate-400 mt-3">
+                 Already have an account? <button className="text-teal-600 font-bold" onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button>
+               </p>
+             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPassport = () => {
     const kid = user?.kids.find(k => k.id === activeKidId);
     const sessions = kid?.sessions || [];
@@ -411,6 +1339,9 @@ const App: React.FC = () => {
              <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center text-xl border-2 border-teal-500 shadow-lg">
                {kid?.avatar}
              </div>
+             <Button variant="ghost" size="sm" onClick={handleLogout} className="text-white/80 hover:text-white">
+               <LogOut size={16} className="mr-2" /> Log out
+             </Button>
           </div>
         </header>
 
@@ -563,7 +1494,7 @@ const App: React.FC = () => {
       return (
           <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
               <header className="bg-white p-4 flex items-center shadow-sm sticky top-0 z-10 border-b border-slate-200">
-                  <Button variant="ghost" onClick={() => setView('passport')} className="text-slate-600">
+                  <Button variant="ghost" onClick={() => requireAuthForPassport()} className="text-slate-600">
                       <ChevronLeft className="mr-2" /> Back
                   </Button>
                   <h2 className="flex-1 text-center font-bold text-xl text-slate-800">
@@ -640,10 +1571,17 @@ const App: React.FC = () => {
                  <p className="text-xs text-slate-400 mt-1">Recording Session • Nia is listening</p>
               </div>
            </div>
-           <Button variant="ghost" size="sm" onClick={() => setView('passport')} className="text-red-400 hover:bg-red-50">
+           <Button variant="ghost" size="sm" onClick={handleExitSession} className="text-red-400 hover:bg-red-50">
               <LogOut size={18} />
            </Button>
         </header>
+
+        {aiRateLimitMessage && (
+          <div className="mx-4 mt-3 mb-1 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+            <AlertTriangle size={16} className="mt-0.5 text-amber-500" />
+            <span>{aiRateLimitMessage}</span>
+          </div>
+        )}
 
         <div className="flex-1 relative flex flex-col overflow-hidden">
            {drawingMode ? (
@@ -688,6 +1626,8 @@ const App: React.FC = () => {
      if (!sessionAnalysis) return null;
 
      const isPaidTier = user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER;
+     const canSaveMedia = user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER || user!.tier === UserTier.FREE || user!.tier === UserTier.GUEST;
+     const isGuestUser = !user?.email;
 
      return (
         <div className="min-h-screen bg-gradient-to-b from-teal-600 to-teal-800 flex items-center justify-center p-4 font-sans">
@@ -757,112 +1697,245 @@ const App: React.FC = () => {
                         </div>
                     )}
 
-                    <Button fullWidth size="lg" variant="primary" onClick={() => {
-                        setActiveSession(null);
-                        setView('dashboard');
-                    }}>
-                        Finish & Go to Dashboard <ArrowRight size={18} className="ml-2" />
+                    {!canSaveMedia && (
+                        <p className="text-center text-[11px] text-slate-500 font-medium mb-4">
+                            Upgrade to Pro to save drawings and photos from every trip.
+                        </p>
+                    )}
+
+                    {isGuestUser ? (
+                      <div className="space-y-3">
+                    <Button 
+                          fullWidth 
+                          size="lg" 
+                          variant="primary" 
+                          onClick={() => {
+                            setActiveSession(null);
+                            requireAuthForPassport();
+                          }}
+                          className="flex items-center justify-center"
+                        >
+                          Create your passport to view this trip <Lock size={18} className="ml-2" />
                     </Button>
+                    <Button 
+                          fullWidth 
+                          variant="secondary" 
+                          onClick={() => {
+                            setActiveSession(null);
+                            setView('add_trip');
+                          }}
+                        >
+                          Keep exploring without signing in
+                    </Button>
+                        <p className="text-xs text-center text-slate-400">
+                          This was your free test trip. Create your passport to keep it and unlock more adventures.
+                        </p>
+                      </div>
+                    ) : (
+                      <Button fullWidth size="lg" variant="primary" onClick={() => {
+                          setActiveSession(null);
+                          setView('dashboard');
+                      }}>
+                          Finish & Go to Dashboard <ArrowRight size={18} className="ml-2" />
+                      </Button>
+                    )}
                 </div>
             </div>
         </div>
      )
   };
 
-  const renderUpgrade = () => (
-      <div className="min-h-screen bg-slate-900/60 flex items-center justify-center p-4 absolute inset-0 z-50 backdrop-blur-sm font-sans">
-          <div className="bg-white rounded-3xl p-8 max-w-4xl w-full text-center shadow-2xl relative">
-              <button onClick={() => setView('dashboard')} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
-                  <LogOut size={24} />
-              </button>
-              
-              <h2 className="text-3xl font-bold text-slate-900 mb-2">Choose Your Journey</h2>
-              <p className="text-slate-600 mb-10 max-w-lg mx-auto">
-                  Unlock the full FunVoyage experience. Save more memories and build your portfolio.
-              </p>
+  const renderUpgrade = () => {
+      const currentTier = user?.tier || UserTier.FREE;
+      const tripsUsed = user ? getTripsUsedForTier(user) : 0;
+      const limit = TIER_LIMITS[currentTier];
+      const freeLimit = TIER_LIMITS[UserTier.FREE];
+      const freeTripLabel = freeLimit === 1 ? 'free trip' : 'free trips';
+      const cappedFreeUsage = Math.min(tripsUsed, freeLimit);
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Pro Plan */}
-                  <div className="border border-teal-100 rounded-2xl p-6 bg-teal-50/30 hover:shadow-lg transition-shadow flex flex-col">
-                      <h3 className="text-teal-800 font-bold text-xl mb-2">Explorer Pro</h3>
-                      <div className="text-3xl font-bold text-slate-900 mb-4">$10<span className="text-sm font-normal text-slate-500">/mo</span></div>
-                      <ul className="space-y-3 text-left mb-8 flex-1">
-                          <li className="flex items-center gap-2 text-slate-700">
-                              <Check size={18} className="text-teal-500" /> Up to 10 Trips
-                          </li>
-                          <li className="flex items-center gap-2 text-slate-700">
-                              <Check size={18} className="text-teal-500" /> Earn Learning Badges
-                          </li>
-                          <li className="flex items-center gap-2 text-slate-700">
-                              <Check size={18} className="text-teal-500" /> Save Drawings & Photos
-                          </li>
-                      </ul>
-                      <Button fullWidth variant={user?.tier === UserTier.PRO ? "outline" : "primary"} 
-                              onClick={() => handleUpgrade(UserTier.PRO)}
-                              disabled={user?.tier === UserTier.PRO}>
-                          {user?.tier === UserTier.PRO ? "Current Plan" : "Upgrade to Pro"}
-                      </Button>
-                  </div>
+      let usageCopy = `You have used ${cappedFreeUsage} of your ${freeLimit} ${freeTripLabel}.`;
+      if (currentTier === UserTier.STARTER) {
+        usageCopy = `You have used ${tripsUsed} of your ${limit} trips this month.`;
+      } else if (currentTier === UserTier.PRO) {
+        usageCopy = `You have used ${tripsUsed} of your ${limit} trips.`;
+      }
 
-                  {/* Adventurer Plan */}
-                  <div className="border-2 border-orange-400 rounded-2xl p-6 bg-white shadow-xl relative flex flex-col">
-                      <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
-                          Best Value
+      return (
+          <div className="min-h-screen bg-slate-900/60 flex items-center justify-center p-4 absolute inset-0 z-50 backdrop-blur-sm font-sans">
+              <div className="bg-white rounded-3xl p-8 max-w-4xl w-full text-center shadow-2xl relative">
+                  <button onClick={() => setView('dashboard')} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                      <LogOut size={24} />
+                  </button>
+                  
+                  <h2 className="text-3xl font-bold text-slate-900 mb-2">Choose Your Journey</h2>
+                  <p className="text-slate-600 mb-2 max-w-lg mx-auto">
+                      {usageCopy} Upgrade to keep adding adventures without limits.
+                  </p>
+                  <p className="text-slate-500 mb-8 max-w-lg mx-auto">
+                      Unlock the full FunVoyage experience. Save more memories and build your portfolio.
+                  </p>
+
+                  {upgradeError && (
+                    <div className="mb-6 inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                      <AlertTriangle size={16} />
+                      <span>{upgradeError}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Starter Plan */}
+                      <div className="border border-slate-200 rounded-2xl p-6 bg-white hover:shadow-lg transition-shadow flex flex-col">
+                          <h3 className="text-slate-900 font-bold text-xl mb-2">Starter</h3>
+                          <div className="text-3xl font-bold text-slate-900 mb-4">$5<span className="text-sm font-normal text-slate-500">/mo</span></div>
+                          <ul className="space-y-3 text-left mb-8 flex-1">
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-slate-500" /> 3 trips per month
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-slate-500" /> 1 Child Profile
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-slate-500" /> No badges or media saving
+                              </li>
+                          </ul>
+                          <Button fullWidth variant={user?.tier === UserTier.STARTER ? "outline" : "secondary"} 
+                                  onClick={() => handleUpgrade(UserTier.STARTER)}
+                                  disabled={user?.tier === UserTier.STARTER || upgradeLoadingTier === UserTier.STARTER || supabaseSessionLoading}>
+                              {upgradeLoadingTier === UserTier.STARTER ? (
+                                <span className="inline-flex items-center justify-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" /> Redirecting...
+                                </span>
+                              ) : user?.tier === UserTier.STARTER ? "Current Plan" : "Upgrade to Starter"}
+                          </Button>
                       </div>
-                      <h3 className="text-orange-800 font-bold text-xl mb-2 flex items-center justify-center gap-2">
-                          <Crown size={20} /> World Adventurer
-                      </h3>
-                      <div className="text-3xl font-bold text-slate-900 mb-4">$25<span className="text-sm font-normal text-slate-500">/mo</span></div>
-                      <ul className="space-y-3 text-left mb-8 flex-1">
-                          <li className="flex items-center gap-2 text-slate-700 font-medium">
-                              <CheckCircle size={18} className="text-orange-500" /> Unlimited Trips
-                          </li>
-                          <li className="flex items-center gap-2 text-slate-700 font-medium">
-                              <CheckCircle size={18} className="text-orange-500" /> All Badges & Rewards
-                          </li>
-                          <li className="flex items-center gap-2 text-slate-700 font-medium">
-                              <CheckCircle size={18} className="text-orange-500" /> Priority AI Features
-                          </li>
-                          <li className="flex items-center gap-2 text-slate-700 font-medium">
-                              <CheckCircle size={18} className="text-orange-500" /> Future: Smart Matching
-                          </li>
-                      </ul>
-                      <Button fullWidth variant="accent" 
-                              onClick={() => handleUpgrade(UserTier.ADVENTURER)}
-                              disabled={user?.tier === UserTier.ADVENTURER}>
-                          {user?.tier === UserTier.ADVENTURER ? "Current Plan" : "Become an Adventurer"}
-                      </Button>
+
+                      {/* Pro Plan */}
+                      <div className="border border-teal-100 rounded-2xl p-6 bg-teal-50/30 hover:shadow-lg transition-shadow flex flex-col">
+                          <h3 className="text-teal-800 font-bold text-xl mb-2">Explorer Pro</h3>
+                          <div className="text-3xl font-bold text-slate-900 mb-4">$10<span className="text-sm font-normal text-slate-500">/mo</span></div>
+                          <ul className="space-y-3 text-left mb-8 flex-1">
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-teal-500" /> Up to 10 Trips
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-teal-500" /> Up to 3 Child Profiles
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-teal-500" /> Earn Learning Badges
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700">
+                                  <Check size={18} className="text-teal-500" /> Save Drawings & Photos
+                              </li>
+                          </ul>
+                          <Button fullWidth variant={user?.tier === UserTier.PRO ? "outline" : "primary"} 
+                                  onClick={() => handleUpgrade(UserTier.PRO)}
+                                  disabled={user?.tier === UserTier.PRO || upgradeLoadingTier === UserTier.PRO || supabaseSessionLoading}>
+                              {upgradeLoadingTier === UserTier.PRO ? (
+                                <span className="inline-flex items-center justify-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" /> Redirecting...
+                                </span>
+                              ) : user?.tier === UserTier.PRO ? "Current Plan" : "Upgrade to Pro"}
+                          </Button>
+                      </div>
+
+                      {/* Adventurer Plan */}
+                      <div className="border-2 border-orange-400 rounded-2xl p-6 bg-white shadow-xl relative flex flex-col">
+                          <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
+                              Best Value
+                          </div>
+                          <h3 className="text-orange-800 font-bold text-xl mb-2 flex items-center justify-center gap-2">
+                              <Crown size={20} /> World Adventurer
+                          </h3>
+                          <div className="text-3xl font-bold text-slate-900 mb-4">$25<span className="text-sm font-normal text-slate-500">/mo</span></div>
+                          <ul className="space-y-3 text-left mb-8 flex-1">
+                              <li className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <CheckCircle size={18} className="text-orange-500" /> Unlimited Trips
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <CheckCircle size={18} className="text-orange-500" /> Unlimited Child Profiles
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <CheckCircle size={18} className="text-orange-500" /> All Badges & Rewards
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <CheckCircle size={18} className="text-orange-500" /> Priority AI Features
+                              </li>
+                              <li className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <CheckCircle size={18} className="text-orange-500" /> Future: Smart Matching
+                              </li>
+                          </ul>
+                          <Button fullWidth variant="accent" 
+                                  onClick={() => handleUpgrade(UserTier.ADVENTURER)}
+                                  disabled={user?.tier === UserTier.ADVENTURER || upgradeLoadingTier === UserTier.ADVENTURER || supabaseSessionLoading}>
+                              {upgradeLoadingTier === UserTier.ADVENTURER ? (
+                                <span className="inline-flex items-center justify-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" /> Redirecting...
+                                </span>
+                              ) : user?.tier === UserTier.ADVENTURER ? "Current Plan" : "Become an Adventurer"}
+                          </Button>
+                      </div>
                   </div>
               </div>
           </div>
-      </div>
-  );
+      );
+  };
 
   return (
     <div className="font-sans text-slate-900 antialiased">
-      {view === 'landing' && <LandingPage onStart={handleStartOnboarding} />}
+      {view === 'landing' && <LandingPage onStart={handleStartOnboarding} onLogin={() => handleStartAuth('login')} />}
+      {view === 'auth' && renderAuth()}
       {view === 'onboarding' && renderOnboarding()}
       {view === 'dashboard' && user && (
         <Dashboard 
           user={user} 
           onUpgrade={() => setView('upgrade')}
-          onViewPassport={(kidId) => {
-            setActiveKidId(kidId);
-            setView('passport');
-          }}
+          onViewPassport={(kidId) => requireAuthForPassport(kidId)}
+          onLogout={handleLogout}
+          onAddChild={handleAddChildClick}
+          onEditChild={handleEditChildClick}
+          onRemoveChild={handleRemoveChild}
         />
       )}
       {view === 'passport' && renderPassport()}
       {view === 'add_trip' && (
          <LocationPicker 
              onLocationSelect={(countryCode, city, countryName) => handleStartSession(countryCode, city, countryName)}
-             onCancel={() => setView('passport')}
+             onCancel={() => {
+               if (user?.email) {
+                 requireAuthForPassport();
+               } else {
+                 setView('dashboard');
+               }
+             }}
          />
       )}
       {view === 'session' && renderSession()}
       {view === 'completion' && renderCompletion()}
       {view === 'upgrade' && renderUpgrade()}
       {view === 'memory_detail' && renderMemoryDetail()}
+      
+      {/* Modals */}
+      <AddChildModal
+        isOpen={showAddChildModal}
+        onClose={() => {
+          setShowAddChildModal(false);
+          setAddChildData({ name: '', age: '' });
+          setEditingKidId(null);
+        }}
+        onSubmit={handleAddChildSubmit}
+        data={addChildData}
+        onChange={setAddChildData}
+        editMode={!!editingKidId}
+      />
+      
+      {user && (
+        <KidSelectorModal
+          isOpen={showKidSelector}
+          onClose={() => setShowKidSelector(false)}
+          kids={user.kids}
+          onSelect={handleKidSelectedForTrip}
+        />
+      )}
     </div>
   );
 };
