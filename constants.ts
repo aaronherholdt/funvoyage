@@ -128,7 +128,9 @@ export const tierHasFeature = (tier: UserTier, feature: keyof TierFeatures): boo
   const features = TIER_FEATURES[tier];
   if (!features) return false;
   const value = features[feature];
-  return typeof value === 'boolean' ? value : value > 0;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > 0;
+  return !!value; // For string values like tripPeriod
 };
 
 /** Get display name for tier */
