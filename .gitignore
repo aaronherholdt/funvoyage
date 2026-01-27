@@ -131,3 +131,14 @@ dist
 *.njsproj
 *.sln
 *.sw?
+
+# AI/IDE tool configurations
+.agent/
+.agents/
+.claude/
+.cursor/
+.gemini/
+.opencode/
+
+# Environment files
+.env.local
