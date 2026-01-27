@@ -1,3 +1,7 @@
+import { createLogger } from '../lib/logger';
+
+const log = createLogger({ component: 'osmService' });
+
 export interface LocationResult {
   countryCode: string;
   countryName: string;
@@ -60,7 +64,7 @@ export const searchLocationOSM = async (
     );
 
     if (!response.ok) {
-      console.error('OSM search failed', response.statusText);
+      log.error('OSM search failed', undefined, response.statusText);
       return null;
     }
 
@@ -96,7 +100,7 @@ export const searchLocationOSM = async (
       displayName: result.display_name,
     };
   } catch (error) {
-    console.error('OSM lookup error', error);
+    log.error('OSM lookup error', undefined, error);
     return null;
   }
 };

@@ -1,5 +1,16 @@
 // lib/paypal.ts
 
+import { createLogger } from './logger';
+
+const log = createLogger({ component: 'paypal' });
+
+/** PayPal HATEOAS link structure */
+interface PayPalLink {
+  href: string;
+  rel: string;
+  method?: string;
+}
+
 const PAYPAL_BASE_URL =
   process.env.PAYPAL_BASE_URL ?? 'https://api-m.sandbox.paypal.com';
 
@@ -23,7 +34,7 @@ async function getPayPalAccessToken(): Promise<string> {
   });
 
   if (!res.ok) {
-    console.error('PayPal token error', await res.text());
+    log.error('PayPal token error', undefined, await res.text());
     throw new Error('Failed to get PayPal access token');
   }
 
@@ -59,13 +70,13 @@ export async function createPayPalSubscription(args: {
   const json = await res.json();
 
   if (!res.ok) {
-    console.error('PayPal create subscription error', json);
+    log.error('PayPal create subscription error', undefined, json);
     throw new Error('Failed to create PayPal subscription');
   }
 
-  const approvalUrl = json.links?.find(
-    (l: any) => l.rel === 'approve'
-  )?.href as string | undefined;
+  const approvalUrl = (json.links as PayPalLink[] | undefined)?.find(
+    (l) => l.rel === 'approve'
+  )?.href;
 
   if (!approvalUrl) {
     throw new Error('No approval URL returned from PayPal');
@@ -97,7 +108,7 @@ export async function getPayPalSubscription(subscriptionId: string): Promise<Pay
   });
 
   if (!res.ok) {
-    console.error('PayPal subscription lookup error', await res.text());
+    log.error('PayPal subscription lookup error', undefined, await res.text());
     throw new Error('Failed to verify PayPal subscription');
   }
 

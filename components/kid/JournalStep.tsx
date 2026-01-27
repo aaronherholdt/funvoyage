@@ -117,13 +117,13 @@ export const JournalStep: React.FC<JournalStepProps> = ({
     return (
         <div className={`min-h-screen ${theme.containerBg} flex flex-col`}>
             {/* Header */}
-            <header className="bg-white p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 z-10">
-                <Button variant="ghost" size="sm" onClick={onBack} className="text-slate-500">
+            <header className="bg-white/80 backdrop-blur-md p-4 border-b border-sand-100 flex items-center justify-between sticky top-0 z-10">
+                <Button variant="ghost" size="sm" onClick={onBack} className="text-sand-500">
                     ← Back
                 </Button>
                 <div className="flex items-center gap-2">
-                    <Sparkles className="text-amber-500" size={20} />
-                    <span className="font-bold text-slate-800">Travel Journal</span>
+                    <Sparkles className="text-coral-500" size={20} />
+                    <span className="font-bold text-sand-800">Travel Journal</span>
                 </div>
                 <div className="w-16" />
             </header>
@@ -157,14 +157,14 @@ export const JournalStep: React.FC<JournalStepProps> = ({
                         className={`
               w-16 h-16 rounded-full flex items-center justify-center transition-all transform active:scale-95 border-4 border-white shadow-lg
               ${isListening
-                                ? 'bg-red-500 text-white animate-pulse'
-                                : 'bg-teal-600 text-white hover:bg-teal-700'
+                                ? 'bg-coral-500 text-white animate-pulse-glow'
+                                : 'bg-ocean-500 text-white hover:bg-ocean-600 btn-magnetic'
                             }
             `}
                     >
                         {isListening ? <MicOff size={24} /> : <Mic size={24} />}
                     </button>
-                    <p className="text-slate-400 text-sm">
+                    <p className="text-sand-400 text-sm">
                         {isListening ? 'Tap to stop recording' : 'Tap to speak your journal'}
                     </p>
                 </div>

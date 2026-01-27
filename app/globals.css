@@ -2,32 +2,348 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;500;600&family=Inter:wght@400;500;600;700&display=swap');
+/* Typography - Distinctive font choices */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fredoka:wght@300;400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap');
 
+/* ========================================
+   DESIGN TOKENS - Playful Exploration Theme
+   ======================================== */
+:root {
+  /* Warm Neutrals (Sand) */
+  --color-sand-50: 45 100% 98%;
+  --color-sand-100: 43 85% 94%;
+  --color-sand-200: 40 75% 87%;
+  --color-sand-300: 38 65% 75%;
+  --color-sand-400: 35 55% 60%;
+  --color-sand-500: 32 50% 45%;
+  --color-sand-600: 30 45% 35%;
+  --color-sand-700: 28 40% 25%;
+  --color-sand-800: 25 35% 18%;
+  --color-sand-900: 22 30% 12%;
+
+  /* Coral Accent (Warm Energy) */
+  --color-coral-50: 15 100% 97%;
+  --color-coral-100: 14 95% 92%;
+  --color-coral-200: 12 90% 85%;
+  --color-coral-300: 10 85% 75%;
+  --color-coral-400: 8 80% 65%;
+  --color-coral-500: 6 75% 55%;
+  --color-coral-600: 4 70% 48%;
+  --color-coral-700: 2 65% 40%;
+
+  /* Ocean Accent (Cool Depth) */
+  --color-ocean-50: 195 100% 97%;
+  --color-ocean-100: 195 90% 92%;
+  --color-ocean-200: 195 85% 82%;
+  --color-ocean-300: 195 80% 68%;
+  --color-ocean-400: 195 75% 52%;
+  --color-ocean-500: 195 80% 42%;
+  --color-ocean-600: 195 85% 32%;
+  --color-ocean-700: 195 90% 24%;
+
+  /* Forest Accent (Growth) */
+  --color-forest-50: 160 70% 96%;
+  --color-forest-100: 160 65% 90%;
+  --color-forest-200: 160 60% 78%;
+  --color-forest-300: 160 55% 62%;
+  --color-forest-400: 160 55% 48%;
+  --color-forest-500: 160 60% 38%;
+  --color-forest-600: 160 65% 28%;
+
+  /* Violet Accent (Teen/Sophistication) */
+  --color-violet-50: 270 80% 97%;
+  --color-violet-100: 270 70% 92%;
+  --color-violet-200: 270 65% 82%;
+  --color-violet-300: 270 60% 70%;
+  --color-violet-400: 270 55% 58%;
+  --color-violet-500: 270 60% 50%;
+  --color-violet-600: 270 65% 42%;
+
+  /* Semantic tokens */
+  --radius-soft: 1.5rem;
+  --radius-round: 2rem;
+  --radius-pill: 9999px;
+  
+  --shadow-glow: 0 0 40px -10px;
+  --shadow-float: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+/* ========================================
+   BASE STYLES
+   ======================================== */
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Outfit', system-ui, sans-serif;
+  background: hsl(var(--color-sand-50));
+  color: hsl(var(--color-sand-900));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .font-kid {
   font-family: 'Fredoka', sans-serif;
 }
 
-/* Custom scrollbar for better aesthetics */
+.font-display {
+  font-family: 'Fraunces', serif;
+  font-optical-sizing: auto;
+}
+
+/* ========================================
+   TEXTURE & ATMOSPHERE
+   ======================================== */
+
+/* Subtle grain texture overlay */
+.texture-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+/* Paper texture for journal feel */
+.texture-paper {
+  background-image: 
+    linear-gradient(to right, hsla(var(--color-sand-300), 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, hsla(var(--color-sand-300), 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Warm gradient mesh background */
+.bg-mesh-warm {
+  background: 
+    radial-gradient(ellipse at 20% 30%, hsla(var(--color-coral-200), 0.4) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, hsla(var(--color-ocean-200), 0.3) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 90%, hsla(var(--color-forest-200), 0.2) 0%, transparent 40%),
+    hsl(var(--color-sand-50));
+}
+
+/* Dark mesh for hero sections */
+.bg-mesh-dark {
+  background: 
+    radial-gradient(ellipse at 20% 30%, hsla(var(--color-coral-600), 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, hsla(var(--color-ocean-600), 0.2) 0%, transparent 50%),
+    linear-gradient(135deg, hsl(var(--color-sand-900)) 0%, hsl(25, 25%, 8%) 100%);
+}
+
+/* ========================================
+   ANIMATIONS
+   ======================================== */
+
+/* Entrance animations */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes reveal-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsla(var(--color-coral-500), 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px hsla(var(--color-coral-500), 0);
+  }
+}
+
+@keyframes wave {
+  0% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+  100% { transform: scaleY(0.3); }
+}
+
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: rotate(-20deg) scale(1.5);
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(5deg) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(-5deg) scale(1);
+  }
+}
+
+/* Animation utilities */
+.animate-reveal-up {
+  animation: reveal-up 0.6s ease-out forwards;
+}
+
+.animate-reveal-scale {
+  animation: reveal-scale 0.5s ease-out forwards;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-stamp-in {
+  animation: stamp-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Staggered delays */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+/* ========================================
+   COMPONENT ENHANCEMENTS
+   ======================================== */
+
+/* Magnetic button effect */
+.btn-magnetic {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+.btn-magnetic:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-float);
+}
+
+.btn-magnetic:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Glass morphism */
+.glass {
+  background: hsla(var(--color-sand-50), 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid hsla(var(--color-sand-200), 0.5);
+}
+
+.glass-dark {
+  background: hsla(var(--color-sand-900), 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid hsla(var(--color-sand-700), 0.3);
+}
+
+/* Bento card enhancement */
+.bento-card {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  position: relative;
+}
+
+.bento-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 hsla(255, 255%, 255%, 0.1);
+  pointer-events: none;
+}
+
+.bento-card:hover {
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 
+    0 32px 64px -12px hsla(var(--color-sand-900), 0.15),
+    0 0 0 1px hsla(var(--color-sand-300), 0.3);
+}
+
+/* Audio visualizer bar */
+.visualizer-bar {
+  animation: wave 1s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.visualizer-bar:nth-child(2) { animation-delay: 0.1s; }
+.visualizer-bar:nth-child(3) { animation-delay: 0.2s; }
+.visualizer-bar:nth-child(4) { animation-delay: 0.3s; }
+.visualizer-bar:nth-child(5) { animation-delay: 0.4s; }
+
+/* ========================================
+   SCROLLBAR
+   ======================================== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: hsl(var(--color-sand-100));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: hsl(var(--color-sand-300));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: hsl(var(--color-sand-400));
 }
 
+/* ========================================
+   3D EFFECTS (Passport)
+   ======================================== */
+.perspective-1000 { perspective: 1000px; }
+.transform-style-3d { transform-style: preserve-3d; }
+.backface-hidden { backface-visibility: hidden; }
+.rotate-y-180 { transform: rotateY(180deg); }
+
+.passport-book {
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: left center;
+  z-index: 20;
+}
+
+.passport-container {
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.group:hover .passport-book {
+  transform: rotateY(-170deg);
+}
+
+.group:hover .passport-container {
+  transform: translateX(50%);
+}
+
+/* Pop animation for map flags */
+.pop-flag {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+  opacity: 0;
+  transform: scale(0) translateY(20px);
+}
+
+.group:hover .pop-flag {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
