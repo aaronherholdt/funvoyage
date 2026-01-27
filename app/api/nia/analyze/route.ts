@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { SessionAnalysis, SessionEntry } from '@/types';
+import { TOKEN_LIMITS } from '@/constants';
 import { AI_RATE_LIMIT, applyRateLimit, getClientIdentifier } from '@/lib/aiRateLimiter';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger({ component: 'api/nia/analyze' });
 
 export const runtime = 'nodejs';
 
@@ -10,7 +14,7 @@ const MODEL_NAME = 'gemini-2.5-flash';
 const getClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('Missing GEMINI_API_KEY');
+    log.error('Missing GEMINI_API_KEY');
     return null;
   }
 
@@ -24,7 +28,7 @@ export async function POST(req: NextRequest) {
   }
 
   const identifier = getClientIdentifier(req);
-  const limit = applyRateLimit(identifier);
+  const limit = await applyRateLimit(identifier);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: 'Too many AI requests. Please slow down.', retryAfterMs: limit.retryAfterMs, limit: AI_RATE_LIMIT.maxRequests },
@@ -65,6 +69,7 @@ export async function POST(req: NextRequest) {
       model: MODEL_NAME,
       contents: prompt,
       config: {
+        maxOutputTokens: TOKEN_LIMITS.analyze,
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -94,7 +99,7 @@ export async function POST(req: NextRequest) {
     const data = JSON.parse(response.text) as SessionAnalysis;
     return NextResponse.json(data);
   } catch (err) {
-    console.error('Nia analyze error:', err);
+    log.error('Nia analyze error', undefined, err);
     return NextResponse.json({ error: 'Failed to analyze session' }, { status: 500 });
   }
 }

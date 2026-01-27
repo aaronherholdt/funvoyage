@@ -1,21 +1,57 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { UserTier, ParentUser, KidProfile, Session, SessionEntry, ConversationStage, SessionAnalysis, Badge, SessionMedia } from './types';
-import { TIER_LIMITS, TIER_CHILD_LIMITS, APP_NAME, STAGE_PROMPTS, BADGES, getFlagEmoji, getAgeTheme } from './constants';
+import { TIER_LIMITS, TIER_CHILD_LIMITS, APP_NAME, STAGE_PROMPTS, BADGES, getFlagEmoji, getAgeTheme, UNLIMITED_LIMIT, MIN_CHILD_AGE, MAX_CHILD_AGE, getTurnLimit } from './constants';
 import { generateNiaResponse, analyzeSession, AiRateLimitError, AI_RATE_LIMIT } from './services/geminiService';
 import { supabase } from './src/lib/supabaseClient';
 import { useAuthSession } from './src/hooks/useAuthSession';
 import { VoiceInterface } from './components/kid/VoiceInterface';
-import { DrawingCanvas } from './components/kid/DrawingCanvas';
 import { LocationPicker } from './components/kid/LocationPicker';
 import { JournalStep } from './components/kid/JournalStep';
 import { ProblemSpottingStep } from './components/kid/ProblemSpottingStep';
-import { Dashboard } from './components/parent/Dashboard';
 import { LandingPage } from './components/LandingPage';
 import { Button } from './components/Button';
 import { AddChildModal } from './components/AddChildModal';
 import { KidSelectorModal } from './components/KidSelectorModal';
 import { Plane, Mic, Lock, LogOut, Plus, ChevronLeft, Check, Star, ArrowRight, Loader2, Award, Crown, CheckCircle, Cloud, Map as MapIcon, Globe, Sparkles, Zap, Heart, BookOpen, ChevronRight, AlertTriangle } from 'lucide-react';
+import { createLogger, setLogContext } from './lib/logger';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { UpgradePrompt } from './components/UpgradePrompt';
+import { useTripLimits } from './hooks/useTripLimits';
+
+const log = createLogger({ component: 'App' });
+
+// Dynamic imports for heavy components (loaded on demand)
+const Dashboard = dynamic(() => import('./components/parent/Dashboard').then(m => m.Dashboard));
+const DrawingCanvas = dynamic(() => import('./components/kid/DrawingCanvas').then(m => m.DrawingCanvas), { ssr: false });
+
+// --- SpeechRecognition Types ---
+interface SpeechRecognitionResult {
+  readonly isFinal: boolean;
+  readonly length: number;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+  readonly message?: string;
+}
 
 interface SpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -24,9 +60,9 @@ interface SpeechRecognition extends EventTarget {
   start: () => void;
   stop: () => void;
   abort: () => void;
-  onresult: ((event: any) => void) | null;
-  onend: ((event: any) => void) | null;
-  onerror: ((event: any) => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onend: ((event: Event) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
 }
 
 type AppView = 'landing' | 'auth' | 'onboarding' | 'dashboard' | 'passport' | 'add_trip' | 'journaling' | 'problem_spotting' | 'session' | 'completion' | 'upgrade' | 'memory_detail';
@@ -84,6 +120,14 @@ const App: React.FC = () => {
   // --- BILLING STATE ---
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgradeLoadingTier, setUpgradeLoadingTier] = useState<UserTier | null>(null);
+
+  // --- TRIP LIMITS STATE ---
+  const { checkTripLimit, recordTripComplete, isChecking: isCheckingTripLimit } = useTripLimits();
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+  const [upgradePromptData, setUpgradePromptData] = useState<{
+    suggestedTier: UserTier;
+    message: string;
+  } | null>(null);
 
   // --- REFS ---
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -200,12 +244,12 @@ const App: React.FC = () => {
         .maybeSingle();
 
       if (profileError) {
-        console.warn('Failed to fetch profile before syncing kids', profileError);
+        log.warn('Failed to fetch profile before syncing kids', undefined, profileError);
       }
 
       const remoteTier = (profile?.tier as UserTier) || UserTier.FREE;
       const childLimit = TIER_CHILD_LIMITS[remoteTier];
-      const isUnlimited = childLimit >= 9999;
+      const isUnlimited = childLimit >= UNLIMITED_LIMIT;
       const existingKids = Array.isArray(profile?.kids) ? (profile!.kids as KidProfile[]) : [];
 
       // Merge to preserve remote source of truth, then enforce limit
@@ -213,7 +257,7 @@ const App: React.FC = () => {
       const kidsToPersist = isUnlimited ? mergedKids : mergedKids.slice(0, childLimit);
       const wasTrimmed = !isUnlimited && mergedKids.length > childLimit;
       if (wasTrimmed) {
-        console.warn('Child limit exceeded for tier, trimming before upsert', { childLimit, attempted: mergedKids.length });
+        log.warn('Child limit exceeded for tier, trimming before upsert', { childLimit, attempted: mergedKids.length });
       }
 
       const { error } = await supabase
@@ -228,12 +272,12 @@ const App: React.FC = () => {
         });
 
       if (error) {
-        console.warn('Failed to sync kids to Supabase', error);
+        log.warn('Failed to sync kids to Supabase', undefined, error);
         return false;
       }
       return true;
     } catch (err) {
-      console.warn('Unexpected error syncing kids', err);
+      log.warn('Unexpected error syncing kids', undefined, err);
       return false;
     }
   };
@@ -338,7 +382,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!recognitionRef.current) return;
 
-    recognitionRef.current.onresult = (event: any) => {
+    recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
       let finalChunk = '';
       let interimChunk = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -362,7 +406,7 @@ const App: React.FC = () => {
       setTranscript('');
     };
 
-    recognitionRef.current.onerror = (event: any) => {
+    recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setIsListening(false);
       }
@@ -420,7 +464,7 @@ const App: React.FC = () => {
 
       // Enforce child limits based on tier (drop extras for under-tier users)
       const childLimit = TIER_CHILD_LIMITS[resolvedTier];
-      const isChildUnlimited = childLimit >= 9999;
+      const isChildUnlimited = childLimit >= UNLIMITED_LIMIT;
       const enforcedKids = isChildUnlimited ? resolvedKids : resolvedKids.slice(0, childLimit);
       const wasChildListTrimmed = !isChildUnlimited && resolvedKids.length > childLimit;
 
@@ -679,11 +723,11 @@ const App: React.FC = () => {
     if (!user || !addChildData.name.trim() || !addChildData.age) return;
 
     const age = parseInt(addChildData.age);
-    if (age < 4 || age > 18) return;
+    if (age < MIN_CHILD_AGE || age > MAX_CHILD_AGE) return;
 
     // Defensive: enforce tier child limit at submit time
     const childLimit = TIER_CHILD_LIMITS[user.tier];
-    const isUnlimited = childLimit >= 9999;
+    const isUnlimited = childLimit >= UNLIMITED_LIMIT;
     const isAddingNewKid = !editingKidId;
     if (!isUnlimited && isAddingNewKid && user.kids.length >= childLimit) {
       setShowAddChildModal(false);
@@ -800,15 +844,21 @@ const App: React.FC = () => {
     setView('auth');
   };
 
-  const handleAddTripClick = () => {
+  const handleAddTripClick = async () => {
     if (!user) return;
 
-    // Check trip limits first
-    const tripsUsed = getTripsUsedForTier(user);
-    const limit = TIER_LIMITS[user.tier];
+    // Check trip limits via API (uses Supabase tracking)
+    const isAuthenticated = !!user.email;
+    const limitStatus = await checkTripLimit(isAuthenticated);
 
-    if (user.tier !== UserTier.ADVENTURER && tripsUsed >= limit) {
-      setView('upgrade');
+    if (!limitStatus.allowed) {
+      // Show upgrade prompt
+      if (limitStatus.upgrade) {
+        setUpgradePromptData(limitStatus.upgrade);
+        setShowUpgradePrompt(true);
+      } else {
+        setView('upgrade');
+      }
       return;
     }
 
@@ -976,17 +1026,28 @@ const App: React.FC = () => {
     const kid = user?.kids.find(k => k.id === activeKidId);
     const kidAge = kid?.age || 8;
 
+    // Check turn limit - count user turns in history
+    const userTurns = newHistory.filter(h => h.role === 'user').length;
+    const turnLimit = getTurnLimit(kidAge);
+    const isAtTurnLimit = userTurns >= turnLimit;
+
     // New stage transitions for problem-solving flow
     let nextStage: ConversationStage = stage;
-    switch (stage) {
-      case 'intro': nextStage = 'brainstorm'; break;
-      case 'brainstorm': nextStage = 'explore'; break;
-      case 'explore': nextStage = 'celebrate'; break;
-      case 'celebrate':
-        // Check if there are more problems to discuss or wrap up
-        nextStage = 'summary';
-        break;
-      case 'summary': break;
+
+    // Force wrap-up if turn limit reached
+    if (isAtTurnLimit) {
+      nextStage = 'summary';
+    } else {
+      switch (stage) {
+        case 'intro': nextStage = 'brainstorm'; break;
+        case 'brainstorm': nextStage = 'explore'; break;
+        case 'explore': nextStage = 'celebrate'; break;
+        case 'celebrate':
+          // Check if there are more problems to discuss or wrap up
+          nextStage = 'summary';
+          break;
+        case 'summary': break;
+      }
     }
 
     if (nextStage === 'summary') {
@@ -1107,6 +1168,10 @@ const App: React.FC = () => {
     if (supabaseSession?.user?.id) {
       await syncKidsToSupabase(supabaseSession.user.id, updatedKids);
     }
+
+    // Record trip completion for usage tracking
+    const isAuthenticated = !!user?.email;
+    await recordTripComplete(isAuthenticated);
 
     setIsAnalyzing(false);
     speak(analysis.summary);
@@ -1493,12 +1558,18 @@ const App: React.FC = () => {
 
                 {/* Add Trip Page */}
                 <div className="h-full p-2" style={{ width: `${100 / totalPages}%` }}>
-                  <div className="w-full h-full bg-white/10 backdrop-blur-sm border-2 border-dashed border-white/30 rounded-[20px] flex flex-col items-center justify-center p-8 text-center cursor-pointer hover:bg-white/20 transition-colors group"
+                  <div className={`w-full h-full bg-white/10 backdrop-blur-sm border-2 border-dashed border-white/30 rounded-[20px] flex flex-col items-center justify-center p-8 text-center cursor-pointer hover:bg-white/20 transition-colors group ${isCheckingTripLimit ? 'opacity-75 pointer-events-none' : ''}`}
                     onClick={handleAddTripClick}>
                     <div className="w-20 h-20 rounded-full bg-teal-500 flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                      <Plus className="text-white" size={40} />
+                      {isCheckingTripLimit ? (
+                        <Loader2 className="text-white animate-spin" size={40} />
+                      ) : (
+                        <Plus className="text-white" size={40} />
+                      )}
                     </div>
-                    <h3 className="font-bold text-2xl text-white mb-2">New Adventure</h3>
+                    <h3 className="font-bold text-2xl text-white mb-2">
+                      {isCheckingTripLimit ? 'Checking...' : 'New Adventure'}
+                    </h3>
                     <p className="text-white/60 text-sm max-w-[200px]">Ready to explore somewhere new? Turn the page to begin.</p>
                   </div>
                 </div>
@@ -1923,80 +1994,99 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="font-sans text-slate-900 antialiased">
-      {view === 'landing' && <LandingPage onStart={handleStartOnboarding} onLogin={() => handleStartAuth('login')} />}
-      {view === 'auth' && renderAuth()}
-      {view === 'onboarding' && renderOnboarding()}
-      {view === 'dashboard' && user && (
-        <Dashboard
-          user={user}
-          onUpgrade={() => setView('upgrade')}
-          onViewPassport={(kidId) => requireAuthForPassport(kidId)}
-          onLogout={handleLogout}
-          onAddChild={handleAddChildClick}
-          onEditChild={handleEditChildClick}
-          onRemoveChild={handleRemoveChild}
+    <ErrorBoundary>
+      <div className="font-sans text-slate-900 antialiased">
+        {view === 'landing' && <LandingPage onStart={handleStartOnboarding} onLogin={() => handleStartAuth('login')} />}
+        {view === 'auth' && renderAuth()}
+        {view === 'onboarding' && renderOnboarding()}
+        {view === 'dashboard' && user && (
+          <Dashboard
+            user={user}
+            onUpgrade={() => setView('upgrade')}
+            onViewPassport={(kidId) => requireAuthForPassport(kidId)}
+            onLogout={handleLogout}
+            onAddChild={handleAddChildClick}
+            onEditChild={handleEditChildClick}
+            onRemoveChild={handleRemoveChild}
+          />
+        )}
+        {view === 'passport' && renderPassport()}
+        {view === 'add_trip' && (
+          <LocationPicker
+            onLocationSelect={(countryCode, city, countryName) => handleLocationSelected(countryCode, city, countryName)}
+            onCancel={() => {
+              if (user?.email) {
+                requireAuthForPassport();
+              } else {
+                setView('dashboard');
+              }
+            }}
+          />
+        )}
+        {view === 'journaling' && activeSession && (
+          <JournalStep
+            city={activeSession.city || ''}
+            countryName={activeSession.countryName || ''}
+            age={user?.kids.find(k => k.id === activeKidId)?.age || 8}
+            onComplete={handleJournalComplete}
+            onBack={() => setView('add_trip')}
+          />
+        )}
+        {view === 'problem_spotting' && activeSession && (
+          <ProblemSpottingStep
+            city={activeSession.city || ''}
+            countryName={activeSession.countryName || ''}
+            age={user?.kids.find(k => k.id === activeKidId)?.age || 8}
+            onComplete={handleProblemsComplete}
+            onBack={() => setView('journaling')}
+          />
+        )}
+        {view === 'session' && renderSession()}
+        {view === 'completion' && renderCompletion()}
+        {view === 'upgrade' && renderUpgrade()}
+        {view === 'memory_detail' && renderMemoryDetail()}
+
+        {/* Modals */}
+        <AddChildModal
+          isOpen={showAddChildModal}
+          onClose={() => {
+            setShowAddChildModal(false);
+            setAddChildData({ name: '', age: '' });
+            setEditingKidId(null);
+          }}
+          onSubmit={handleAddChildSubmit}
+          data={addChildData}
+          onChange={setAddChildData}
+          editMode={!!editingKidId}
         />
-      )}
-      {view === 'passport' && renderPassport()}
-      {view === 'add_trip' && (
-        <LocationPicker
-          onLocationSelect={(countryCode, city, countryName) => handleLocationSelected(countryCode, city, countryName)}
-          onCancel={() => {
-            if (user?.email) {
-              requireAuthForPassport();
-            } else {
-              setView('dashboard');
-            }
+
+        {user && (
+          <KidSelectorModal
+            isOpen={showKidSelector}
+            onClose={() => setShowKidSelector(false)}
+            kids={user.kids}
+            onSelect={handleKidSelectedForTrip}
+          />
+        )}
+
+        {/* Upgrade Prompt Modal */}
+        <UpgradePrompt
+          isOpen={showUpgradePrompt}
+          onClose={() => {
+            setShowUpgradePrompt(false);
+            setUpgradePromptData(null);
+          }}
+          currentTier={user?.tier || UserTier.GUEST}
+          suggestedTier={upgradePromptData?.suggestedTier || UserTier.STARTER}
+          message={upgradePromptData?.message || "You've reached your trip limit!"}
+          onUpgrade={(tier) => {
+            setShowUpgradePrompt(false);
+            setUpgradePromptData(null);
+            handleUpgrade(tier);
           }}
         />
-      )}
-      {view === 'journaling' && activeSession && (
-        <JournalStep
-          city={activeSession.city || ''}
-          countryName={activeSession.countryName || ''}
-          age={user?.kids.find(k => k.id === activeKidId)?.age || 8}
-          onComplete={handleJournalComplete}
-          onBack={() => setView('add_trip')}
-        />
-      )}
-      {view === 'problem_spotting' && activeSession && (
-        <ProblemSpottingStep
-          city={activeSession.city || ''}
-          countryName={activeSession.countryName || ''}
-          age={user?.kids.find(k => k.id === activeKidId)?.age || 8}
-          onComplete={handleProblemsComplete}
-          onBack={() => setView('journaling')}
-        />
-      )}
-      {view === 'session' && renderSession()}
-      {view === 'completion' && renderCompletion()}
-      {view === 'upgrade' && renderUpgrade()}
-      {view === 'memory_detail' && renderMemoryDetail()}
-
-      {/* Modals */}
-      <AddChildModal
-        isOpen={showAddChildModal}
-        onClose={() => {
-          setShowAddChildModal(false);
-          setAddChildData({ name: '', age: '' });
-          setEditingKidId(null);
-        }}
-        onSubmit={handleAddChildSubmit}
-        data={addChildData}
-        onChange={setAddChildData}
-        editMode={!!editingKidId}
-      />
-
-      {user && (
-        <KidSelectorModal
-          isOpen={showKidSelector}
-          onClose={() => setShowKidSelector(false)}
-          kids={user.kids}
-          onSelect={handleKidSelectedForTrip}
-        />
-      )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 };
 

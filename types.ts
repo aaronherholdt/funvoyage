@@ -1,10 +1,26 @@
 
 export enum UserTier {
+  // Legacy names (kept for backward compatibility)
   GUEST = 'GUEST',
   FREE = 'FREE',
   STARTER = 'STARTER',
   PRO = 'PRO',
-  ADVENTURER = 'ADVENTURER'
+  ADVENTURER = 'ADVENTURER',
+  // New tier names (aliases)
+  TOURIST = 'GUEST',           // 1 free trip
+  EXPLORER_PRO = 'PRO',        // 10 trips/month
+  WORLD_ADVENTURER = 'ADVENTURER', // 15 trips/day
+}
+
+/** Feature flags available per tier */
+export interface TierFeatures {
+  maxTrips: number;
+  tripPeriod: 'lifetime' | 'monthly' | 'daily';
+  maxChildren: number;
+  badges: boolean;
+  mediaSaving: boolean;
+  pdfReports: boolean;
+  prioritySupport: boolean;
 }
 
 export interface SessionEntry {

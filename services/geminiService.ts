@@ -2,6 +2,9 @@
 // Client-side helper: talk to our own API routes instead of Google directly, with guard rails to avoid rate-limit abuse.
 
 import type { SessionEntry, SessionAnalysis } from '../types';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger({ component: 'geminiService' });
 
 export const AI_RATE_LIMIT = {
   maxRequestsPerMinute: 10,
@@ -14,6 +17,17 @@ export class AiRateLimitError extends Error {
     super(message);
     this.name = 'AiRateLimitError';
     this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export class TurnLimitError extends Error {
+  turnLimit: number;
+  currentTurns: number;
+  constructor(message: string, turnLimit: number, currentTurns: number) {
+    super(message);
+    this.name = 'TurnLimitError';
+    this.turnLimit = turnLimit;
+    this.currentTurns = currentTurns;
   }
 }
 
@@ -45,6 +59,14 @@ export const generateNiaResponse = async (
 
     if (res.status === 429) {
       const payload = await parseErrorPayload(res);
+      // Check if it's a turn limit error vs rate limit error
+      if (payload?.turnLimit !== undefined) {
+        throw new TurnLimitError(
+          payload?.error || 'Turn limit exceeded',
+          payload.turnLimit,
+          payload.currentTurns,
+        );
+      }
       throw new AiRateLimitError(
         payload?.error || 'Too many requests. Please slow down.',
         payload?.retryAfterMs,
@@ -52,15 +74,15 @@ export const generateNiaResponse = async (
     }
 
     if (!res.ok) {
-      console.error('Nia respond error:', await res.text());
+      log.error('Nia respond error', undefined, await res.text());
       return "I'm having a little trouble hearing you. Can we try that again?";
     }
 
     const data = await res.json();
     return data.text || "I'm listening...";
   } catch (err) {
-    if (err instanceof AiRateLimitError) throw err;
-    console.error('Nia respond error:', err);
+    if (err instanceof AiRateLimitError || err instanceof TurnLimitError) throw err;
+    log.error('Nia respond error', undefined, err);
     return "I'm having a little trouble hearing you. Can we try that again?";
   }
 };
@@ -88,7 +110,7 @@ export const analyzeSession = async (
     }
 
     if (!res.ok) {
-      console.error('Nia analyze error:', await res.text());
+      log.error('Nia analyze error', undefined, await res.text());
       return null;
     }
 
@@ -96,7 +118,7 @@ export const analyzeSession = async (
     return data;
   } catch (err) {
     if (err instanceof AiRateLimitError) throw err;
-    console.error('Nia analyze error:', err);
+    log.error('Nia analyze error', undefined, err);
     return null;
   }
 };

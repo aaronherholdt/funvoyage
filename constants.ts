@@ -1,14 +1,69 @@
 
-import { UserTier, Badge } from './types';
+import { UserTier, Badge, TierFeatures } from './types';
 
 export const APP_NAME = "FunVoyage";
 
+/** Sentinel value representing unlimited tier limits */
+export const UNLIMITED_LIMIT = 9999;
+
+/** Age validation bounds */
+export const MIN_CHILD_AGE = 4;
+export const MAX_CHILD_AGE = 18;
+
+/** Token limits for Gemini API responses by age group */
+export const TOKEN_LIMITS = {
+  respond: {
+    young: 150,    // Ages 4-6: Short, simple responses
+    middle: 200,   // Ages 7-9: Slightly longer
+    preteen: 250,  // Ages 10-12: Moderate length
+    teen: 300,     // Ages 13+: Fuller responses
+  },
+  analyze: 500,    // Session analysis (structured JSON output)
+};
+
+/** Get max output tokens for respond API based on child age */
+export const getRespondTokenLimit = (age: number): number => {
+  if (age <= 6) return TOKEN_LIMITS.respond.young;
+  if (age <= 9) return TOKEN_LIMITS.respond.middle;
+  if (age <= 12) return TOKEN_LIMITS.respond.preteen;
+  return TOKEN_LIMITS.respond.teen;
+};
+
+/** Conversation turn limits by age group (user turns, not total exchanges) */
+export const TURN_LIMITS = {
+  young: 4,    // Ages 4-6: Short attention spans
+  middle: 6,   // Ages 7-9
+  preteen: 8,  // Ages 10-12
+  teen: 10,    // Ages 13+
+};
+
+/** Get max conversation turns based on child age */
+export const getTurnLimit = (age: number): number => {
+  if (age <= 6) return TURN_LIMITS.young;
+  if (age <= 9) return TURN_LIMITS.middle;
+  if (age <= 12) return TURN_LIMITS.preteen;
+  return TURN_LIMITS.teen;
+};
+
+/** Legacy simple trip limits (kept for backward compatibility) */
 export const TIER_LIMITS = {
   [UserTier.GUEST]: 1,
   [UserTier.FREE]: 1,
   [UserTier.STARTER]: 3,
   [UserTier.PRO]: 10,
-  [UserTier.ADVENTURER]: 9999
+  [UserTier.ADVENTURER]: UNLIMITED_LIMIT
+};
+
+/** Trip limit periods */
+export type TripLimitPeriod = 'lifetime' | 'monthly' | 'daily';
+
+/** Detailed trip limits with period specification */
+export const TRIP_LIMITS = {
+  [UserTier.GUEST]: { limit: 1, period: 'lifetime' as TripLimitPeriod },      // Tourist: 1 lifetime trip
+  [UserTier.FREE]: { limit: 1, period: 'lifetime' as TripLimitPeriod },       // Free (same as tourist after signup)
+  [UserTier.STARTER]: { limit: 3, period: 'monthly' as TripLimitPeriod },     // Starter: 3 trips/month
+  [UserTier.PRO]: { limit: 10, period: 'monthly' as TripLimitPeriod },        // Explorer Pro: 10 trips/month
+  [UserTier.ADVENTURER]: { limit: 15, period: 'daily' as TripLimitPeriod },   // Adventurer: 15 trips/day (feels unlimited)
 };
 
 export const TIER_CHILD_LIMITS = {
@@ -16,7 +71,73 @@ export const TIER_CHILD_LIMITS = {
   [UserTier.FREE]: 1,
   [UserTier.STARTER]: 1,
   [UserTier.PRO]: 3,
-  [UserTier.ADVENTURER]: 9999
+  [UserTier.ADVENTURER]: UNLIMITED_LIMIT
+};
+
+/** Complete tier feature configuration */
+export const TIER_FEATURES: Record<UserTier, TierFeatures> = {
+  [UserTier.GUEST]: {
+    maxTrips: 1,
+    tripPeriod: 'lifetime',
+    maxChildren: 1,
+    badges: false,
+    mediaSaving: false,
+    pdfReports: false,
+    prioritySupport: false,
+  },
+  [UserTier.FREE]: {
+    maxTrips: 1,
+    tripPeriod: 'lifetime',
+    maxChildren: 1,
+    badges: false,
+    mediaSaving: false,
+    pdfReports: false,
+    prioritySupport: false,
+  },
+  [UserTier.STARTER]: {
+    maxTrips: 3,
+    tripPeriod: 'monthly',
+    maxChildren: 1,
+    badges: true,
+    mediaSaving: false,
+    pdfReports: false,
+    prioritySupport: false,
+  },
+  [UserTier.PRO]: {
+    maxTrips: 10,
+    tripPeriod: 'monthly',
+    maxChildren: 3,
+    badges: true,
+    mediaSaving: true,
+    pdfReports: true,
+    prioritySupport: false,
+  },
+  [UserTier.ADVENTURER]: {
+    maxTrips: 15,
+    tripPeriod: 'daily',
+    maxChildren: UNLIMITED_LIMIT,
+    badges: true,
+    mediaSaving: true,
+    pdfReports: true,
+    prioritySupport: true,
+  },
+};
+
+/** Check if a tier has a specific feature */
+export const tierHasFeature = (tier: UserTier, feature: keyof TierFeatures): boolean => {
+  const features = TIER_FEATURES[tier];
+  if (!features) return false;
+  const value = features[feature];
+  return typeof value === 'boolean' ? value : value > 0;
+};
+
+/** Get display name for tier */
+export const TIER_DISPLAY_NAMES: Record<UserTier, string> = {
+  [UserTier.GUEST]: 'Tourist',
+  [UserTier.FREE]: 'Tourist',
+  [UserTier.STARTER]: 'Starter',
+  [UserTier.PRO]: 'Explorer Pro',
+  [UserTier.ADVENTURER]: 'World Adventurer',
 };
 
 export const BADGES: Badge[] = [
@@ -98,58 +219,58 @@ export const getAgeTheme = (age: number) => {
   if (age <= 6) {
     return {
       font: 'font-kid',
-      containerBg: 'bg-yellow-50',
-      bubbleAi: 'bg-yellow-200 text-yellow-900 border-yellow-300 text-2xl rounded-[2rem]',
-      bubbleUser: 'bg-orange-200 text-orange-900 border-orange-300 text-2xl rounded-[2rem]',
-      button: 'bg-orange-500 hover:bg-orange-600 text-white shadow-xl scale-110',
-      visualizer: 'bg-orange-500',
+      containerBg: 'bg-coral-50',
+      bubbleAi: 'bg-coral-100 text-coral-700 border-coral-200 text-2xl rounded-[2rem]',
+      bubbleUser: 'bg-sand-200 text-sand-700 border-sand-300 text-2xl rounded-[2rem]',
+      button: 'bg-coral-500 hover:bg-coral-600 text-white shadow-xl scale-110 btn-magnetic',
+      visualizer: 'bg-coral-500',
       micIconSize: 40,
       micButtonSize: 'w-24 h-24',
       showText: false,
       aiAvatar: '🦄',
-      navColor: 'text-orange-600',
+      navColor: 'text-coral-600',
       prompt: "Tap the big button and tell me!"
     };
   }
   if (age <= 9) {
     return {
       font: 'font-kid',
-      containerBg: 'bg-indigo-50',
-      bubbleAi: 'bg-white text-slate-800 border-indigo-100 text-xl rounded-3xl',
-      bubbleUser: 'bg-indigo-100 text-indigo-900 border-indigo-200 text-xl rounded-3xl',
-      button: 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg',
-      visualizer: 'bg-teal-500',
+      containerBg: 'bg-ocean-50',
+      bubbleAi: 'bg-white text-sand-800 border-ocean-100 text-xl rounded-3xl shadow-sm',
+      bubbleUser: 'bg-ocean-100 text-ocean-700 border-ocean-200 text-xl rounded-3xl',
+      button: 'bg-ocean-500 hover:bg-ocean-600 text-white shadow-lg btn-magnetic',
+      visualizer: 'bg-ocean-500',
       micIconSize: 32,
       micButtonSize: 'w-20 h-20',
       showText: true,
       aiAvatar: '🤖',
-      navColor: 'text-teal-600',
+      navColor: 'text-ocean-600',
       prompt: "Tap to Answer"
     };
   }
   if (age <= 12) {
     return {
       font: 'font-sans',
-      containerBg: 'bg-slate-50',
-      bubbleAi: 'bg-white text-slate-800 border-slate-200 text-lg rounded-2xl shadow-sm',
-      bubbleUser: 'bg-blue-100 text-blue-900 border-blue-200 text-lg rounded-2xl shadow-sm',
-      button: 'bg-blue-600 hover:bg-blue-700 text-white shadow-md',
-      visualizer: 'bg-blue-500',
+      containerBg: 'bg-forest-50',
+      bubbleAi: 'bg-white text-sand-800 border-forest-100 text-lg rounded-2xl shadow-sm',
+      bubbleUser: 'bg-forest-100 text-forest-700 border-forest-200 text-lg rounded-2xl shadow-sm',
+      button: 'bg-forest-500 hover:bg-forest-600 text-white shadow-md btn-magnetic',
+      visualizer: 'bg-forest-500',
       micIconSize: 28,
       micButtonSize: 'w-16 h-16',
       showText: true,
       aiAvatar: '🧭',
-      navColor: 'text-blue-600',
+      navColor: 'text-forest-600',
       prompt: "Tap to Speak"
     };
   }
   // 13-14+
   return {
     font: 'font-sans',
-    containerBg: 'bg-gray-50',
-    bubbleAi: 'bg-white text-gray-800 border-gray-200 text-base rounded-xl shadow-sm',
-    bubbleUser: 'bg-violet-600 text-white border-violet-700 text-base rounded-xl shadow-sm',
-    button: 'bg-violet-600 hover:bg-violet-700 text-white shadow-md',
+    containerBg: 'bg-sand-50',
+    bubbleAi: 'bg-white text-sand-800 border-sand-200 text-base rounded-xl shadow-sm',
+    bubbleUser: 'bg-violet-500 text-white border-violet-600 text-base rounded-xl shadow-sm',
+    button: 'bg-violet-500 hover:bg-violet-600 text-white shadow-md btn-magnetic',
     visualizer: 'bg-violet-500',
     micIconSize: 24,
     micButtonSize: 'w-16 h-16',
@@ -159,3 +280,4 @@ export const getAgeTheme = (age: number) => {
     prompt: "Record Response"
   };
 };
+
