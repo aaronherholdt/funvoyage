@@ -18,7 +18,6 @@ export interface TierFeatures {
   tripPeriod: 'lifetime' | 'monthly' | 'daily';
   maxChildren: number;
   badges: boolean;
-  mediaSaving: boolean;
   pdfReports: boolean;
   prioritySupport: boolean;
 }
@@ -27,13 +26,6 @@ export interface SessionEntry {
   role: 'model' | 'user';
   text: string;
   timestamp: number;
-}
-
-export interface SessionMedia {
-  id: string;
-  type: 'drawing' | 'photo';
-  dataUrl: string; // Base64 or URL
-  createdAt: number;
 }
 
 export type TraitCategory = 'curiosity' | 'empathy' | 'resilience' | 'problem_solving';
@@ -71,8 +63,6 @@ export interface Session {
   // Analysis data
   analysis?: SessionAnalysis;
   earnedBadges?: Badge[];
-
-  media: SessionMedia[];
   completed: boolean;
 }
 

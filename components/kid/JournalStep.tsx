@@ -37,6 +37,11 @@ export const JournalStep: React.FC<JournalStepProps> = ({
 
     const location = city || countryName;
 
+    // Track the text that was in the textarea BEFORE we started this recording session
+    const baseTextRef = useRef('');
+    // Track what we've already "committed" as final from this session
+    const committedTextRef = useRef('');
+
     // Initialize speech recognition
     useEffect(() => {
         if ('webkitSpeechRecognition' in window) {
@@ -48,25 +53,52 @@ export const JournalStep: React.FC<JournalStepProps> = ({
                 recognitionRef.current.lang = 'en-US';
 
                 recognitionRef.current.onresult = (event: any) => {
-                    let transcript = '';
-                    for (let i = 0; i < event.results.length; i++) {
-                        transcript += event.results[i][0].transcript;
-                    }
-                    setJournalText(prev => {
-                        // If we're starting fresh after previous dictation, append with space
-                        const base = prev.trim();
-                        if (base && !base.endsWith(' ')) {
-                            return base + ' ' + transcript;
+                    let finalTranscript = '';
+                    let interimTranscript = '';
+
+                    // Loop through results - start from resultIndex (new results only)
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        const transcript = result[0].transcript;
+
+                        if (result.isFinal) {
+                            // This phrase is complete - add to final transcript
+                            finalTranscript += transcript;
+                        } else {
+                            // Still being processed - show as preview
+                            interimTranscript += transcript;
                         }
-                        return transcript;
-                    });
+                    }
+
+                    // If we got final results, commit them
+                    if (finalTranscript) {
+                        committedTextRef.current += finalTranscript;
+                    }
+
+                    // Build the display text:
+                    // Base (what was there before) + Committed (finalized this session) + Interim (preview)
+                    const base = baseTextRef.current.trim();
+                    const committed = committedTextRef.current;
+                    const interim = interimTranscript;
+
+                    // Combine with proper spacing
+                    let displayText = base;
+                    if (committed) {
+                        displayText = displayText ? `${displayText} ${committed}` : committed;
+                    }
+                    if (interim) {
+                        displayText = displayText ? `${displayText} ${interim}` : interim;
+                    }
+
+                    setJournalText(displayText);
                 };
 
                 recognitionRef.current.onend = () => {
                     setIsListening(false);
                 };
 
-                recognitionRef.current.onerror = () => {
+                recognitionRef.current.onerror = (event: any) => {
+                    console.error('Speech recognition error:', event.error);
                     setIsListening(false);
                 };
             }
@@ -82,6 +114,10 @@ export const JournalStep: React.FC<JournalStepProps> = ({
             recognitionRef.current?.stop();
             setIsListening(false);
         } else {
+            // Save current text as base before starting new recording
+            baseTextRef.current = journalText;
+            // Reset committed text for this new session
+            committedTextRef.current = '';
             recognitionRef.current?.start();
             setIsListening(true);
         }

@@ -3,7 +3,7 @@ import React from 'react';
 import { ParentUser, UserTier, KidProfile, Session, Badge } from '../../types';
 import { TIER_LIMITS, TIER_CHILD_LIMITS, BADGES, getFlagEmoji } from '../../constants';
 import { Button } from '../Button';
-import { Map, Award, Calendar, Lock, CheckCircle, Crown, LogOut, Plus, Users } from 'lucide-react';
+import { Map, Award, Calendar, Lock, CheckCircle, Crown, LogOut, Plus, Users, Compass } from 'lucide-react';
 
 interface DashboardProps {
   user: ParentUser;
@@ -13,9 +13,10 @@ interface DashboardProps {
   onAddChild: () => void;
   onEditChild?: (kid: KidProfile) => void;
   onRemoveChild?: (kidId: string) => void;
+  onAddTrip?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPassport, onLogout, onAddChild, onEditChild, onRemoveChild }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPassport, onLogout, onAddChild, onEditChild, onRemoveChild, onAddTrip }) => {
   const totalTripsUsed = user.kids.reduce((sum, kid) => sum + kid.sessions.length, 0);
   const countTripsThisMonth = () => {
     const now = new Date();
@@ -221,9 +222,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
             </div>
 
             <div className="flex gap-2 w-full md:w-auto">
-               <Button onClick={() => onViewPassport(kid.id)}>
-                 Open Passport
-               </Button>
+               {kid.sessions.length === 0 && onAddTrip ? (
+                 <Button variant="primary" onClick={onAddTrip}>
+                   <Compass size={16} className="mr-2" /> Start New Adventure
+                 </Button>
+               ) : (
+                 <>
+                   <Button onClick={() => onViewPassport(kid.id)}>
+                     Open Passport
+                   </Button>
+                   {onAddTrip && (
+                     <Button variant="outline" onClick={onAddTrip}>
+                       <Compass size={16} className="mr-2" /> New Trip
+                     </Button>
+                   )}
+                 </>
+               )}
                {onEditChild && (
                  <Button variant="ghost" size="sm" onClick={() => onEditChild(kid)} className="text-slate-400 hover:text-slate-600">
                    Edit

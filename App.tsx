@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { UserTier, ParentUser, KidProfile, Session, SessionEntry, ConversationStage, SessionAnalysis, Badge, SessionMedia } from './types';
+import { UserTier, ParentUser, KidProfile, Session, SessionEntry, ConversationStage, SessionAnalysis, Badge } from './types';
 import { TIER_LIMITS, TIER_CHILD_LIMITS, APP_NAME, STAGE_PROMPTS, BADGES, getFlagEmoji, getAgeTheme, UNLIMITED_LIMIT, MIN_CHILD_AGE, MAX_CHILD_AGE, getTurnLimit } from './constants';
 import { generateNiaResponse, analyzeSession, AiRateLimitError, AI_RATE_LIMIT } from './services/geminiService';
 import { supabase } from './src/lib/supabaseClient';
@@ -24,7 +24,6 @@ const log = createLogger({ component: 'App' });
 
 // Dynamic imports for heavy components (loaded on demand)
 const Dashboard = dynamic(() => import('./components/parent/Dashboard').then(m => m.Dashboard));
-const DrawingCanvas = dynamic(() => import('./components/kid/DrawingCanvas').then(m => m.DrawingCanvas), { ssr: false });
 
 // --- SpeechRecognition Types ---
 interface SpeechRecognitionResult {
@@ -889,7 +888,6 @@ const App: React.FC = () => {
       entries: [],
       journalEntry: '',
       identifiedProblems: [],
-      media: [],
       completed: false
     };
     setActiveSession(newSession);
@@ -1067,14 +1065,13 @@ const App: React.FC = () => {
     handleFinishAndAnalyze([...history]);
   };
 
-  const handleFinishAndAnalyze = async (finalHistory: SessionEntry[], finalMedia?: SessionMedia[]) => {
+  const handleFinishAndAnalyze = async (finalHistory: SessionEntry[]) => {
     if (!canInvokeAi()) return;
 
     setView('completion');
     setIsAnalyzing(true);
 
     const kid = user!.kids.find(k => k.id === activeKidId)!;
-    const canSaveMedia = user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER || user!.tier === UserTier.FREE || user!.tier === UserTier.GUEST;
 
     // 1. Analyze Session
     let analysis: SessionAnalysis | null = null;
@@ -1143,8 +1140,7 @@ const App: React.FC = () => {
       entries: finalHistory,
       analysis: analysis,
       completed: true,
-      earnedBadges: newlyUnlockedBadges,
-      media: canSaveMedia ? (finalMedia || activeSession?.media || []) : []
+      earnedBadges: newlyUnlockedBadges
     };
 
     const updatedKids = user!.kids.map(k => {
@@ -1501,19 +1497,11 @@ const App: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Main Visual - Stamp/Photo */}
+                      {/* Main Visual */}
                       <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
-                        {session.media?.[0] ? (
-                          <div className="w-full aspect-square bg-slate-100 p-2 shadow-md transform rotate-1 relative">
-                            {/* Tape Effect */}
-                            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-24 h-8 bg-yellow-200/60 rotate-[-2deg] backdrop-blur-sm"></div>
-                            <img src={session.media[0].dataUrl} alt="memory" className="w-full h-full object-cover filter sepia-[0.2]" />
-                          </div>
-                        ) : (
-                          <div className="w-48 h-48 rounded-full border-4 border-double border-teal-200 flex items-center justify-center opacity-50">
-                            <MapIcon size={64} className="text-teal-200" />
-                          </div>
-                        )}
+                        <div className="w-48 h-48 rounded-full border-4 border-double border-teal-200 flex items-center justify-center opacity-50">
+                          <MapIcon size={64} className="text-teal-200" />
+                        </div>
 
                         {/* Insight Text - "Handwritten" */}
                         <div className="mt-6 w-full">
@@ -1615,13 +1603,6 @@ const App: React.FC = () => {
           <div className="w-10"></div>
         </header>
         <div className="p-6 max-w-3xl mx-auto w-full space-y-8">
-          {/* Image/Drawing Hero */}
-          {viewingSession.media?.[0] && (
-            <div className="w-full aspect-video bg-black rounded-2xl shadow-lg overflow-hidden relative">
-              <img src={viewingSession.media[0].dataUrl} className="w-full h-full object-contain" alt="Memory" />
-            </div>
-          )}
-
           {/* Summary Card */}
           <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
             <h3 className="text-teal-600 font-bold uppercase tracking-wider text-xs mb-4">Travel Log Summary</h3>
@@ -1739,7 +1720,6 @@ const App: React.FC = () => {
     if (!sessionAnalysis) return null;
 
     const isPaidTier = user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER;
-    const canSaveMedia = user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER || user!.tier === UserTier.FREE || user!.tier === UserTier.GUEST;
     const isGuestUser = !user?.email;
 
     return (
@@ -1808,12 +1788,6 @@ const App: React.FC = () => {
                   <p className="text-[10px] text-slate-500">Upgrade to collect them!</p>
                 </div>
               </div>
-            )}
-
-            {!canSaveMedia && (
-              <p className="text-center text-[11px] text-slate-500 font-medium mb-4">
-                Upgrade to Pro to save drawings and photos from every trip.
-              </p>
             )}
 
             {isGuestUser ? (
@@ -1908,7 +1882,7 @@ const App: React.FC = () => {
                   <Check size={18} className="text-slate-500" /> 1 Child Profile
                 </li>
                 <li className="flex items-center gap-2 text-slate-700">
-                  <Check size={18} className="text-slate-500" /> No badges or media saving
+                  <Check size={18} className="text-slate-500" /> No badges
                 </li>
               </ul>
               <Button fullWidth variant={user?.tier === UserTier.STARTER ? "outline" : "secondary"}
@@ -2008,6 +1982,7 @@ const App: React.FC = () => {
             onAddChild={handleAddChildClick}
             onEditChild={handleEditChildClick}
             onRemoveChild={handleRemoveChild}
+            onAddTrip={handleAddTripClick}
           />
         )}
         {view === 'passport' && renderPassport()}

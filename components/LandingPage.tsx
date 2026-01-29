@@ -56,11 +56,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                 </div>
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                     <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mb-6">
-                        🎨
+                        🏆
                     </div>
-                    <h3 className="text-2xl font-bold text-slate-900 mb-3">3. Creative Synthesis</h3>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-3">3. Celebrate Growth</h3>
                     <p className="text-slate-600">
-                        Drawing a memory or taking a deliberate photo cements the neural pathways. We turn their journal into a portfolio of growth.
+                        Every conversation builds critical thinking skills. We turn their journal into a portfolio of growth with badges and insights.
                     </p>
                 </div>
             </div>
@@ -181,7 +181,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                     <ul className="space-y-3 mb-8 flex-1">
                         <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> 1 trip total (account optional)</li>
                         <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> Basic AI Chat</li>
-                        <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> Save drawings & photos for this trip</li>
+                        <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> Journal & Problem-Solving</li>
                     </ul>
                     <Button onClick={onStart} variant="secondary" fullWidth>Try Now</Button>
                 </div>
@@ -194,7 +194,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                     <ul className="space-y-3 mb-8 flex-1">
                         <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> 3 trips per month</li>
                         <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> 1 Child Profile</li>
-                        <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> No badges or media saving</li>
+                        <li className="flex items-center gap-2 text-slate-700 text-sm"><Check size={16} className="text-slate-400" /> Badges not included</li>
                     </ul>
                     <Button onClick={() => handleUpgrade('STARTER')} variant="outline" fullWidth>Upgrade to Starter</Button>
                 </div>
@@ -208,7 +208,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                     <ul className="space-y-3 mb-8 flex-1">
                         <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500" /> Up to 10 Trips</li>
                         <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500" /> Earn Learning Badges</li>
-                        <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500" /> Save Drawings & Photos</li>
+                        <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500" /> PDF Journey Reports</li>
                         <li className="flex items-center gap-2 text-slate-800 text-sm font-medium"><Check size={16} className="text-teal-500" /> Up to 3 Child Profiles</li>
                     </ul>
                     <Button onClick={() => handleUpgrade('PRO')} variant="primary" fullWidth>Upgrade to Pro</Button>

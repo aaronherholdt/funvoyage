@@ -55,15 +55,6 @@ function FlyToLocation({ location }: { location: LocationResult | null }) {
 const MapComponent: React.FC<MapComponentProps> = ({ selectedLocation, onMapClick }) => {
   return (
     <div className="relative">
-      {/* Map Instructions Overlay */}
-      <div className="absolute top-2 left-2 right-2 z-[1000] pointer-events-none">
-        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 text-center shadow-md">
-          <p className="text-xs sm:text-sm text-slate-600">
-            Click anywhere on the map to select a location!
-          </p>
-        </div>
-      </div>
-
       <MapContainer
         center={[20, 0]}
         zoom={2}

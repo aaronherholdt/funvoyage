@@ -54,10 +54,6 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
       features.push('Achievement badges');
     }
 
-    if (suggestedFeatures.mediaSaving && !currentFeatures.mediaSaving) {
-      features.push('Save drawings & photos');
-    }
-
     if (suggestedFeatures.pdfReports && !currentFeatures.pdfReports) {
       features.push('PDF trip reports');
     }
