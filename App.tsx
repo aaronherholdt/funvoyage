@@ -2008,6 +2008,7 @@ const App: React.FC = () => {
             onAddChild={handleAddChildClick}
             onEditChild={handleEditChildClick}
             onRemoveChild={handleRemoveChild}
+            onStartTrip={!user.email ? handleAddTripClick : undefined}
           />
         )}
         {view === 'passport' && renderPassport()}

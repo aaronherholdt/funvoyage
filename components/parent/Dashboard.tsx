@@ -13,9 +13,10 @@ interface DashboardProps {
   onAddChild: () => void;
   onEditChild?: (kid: KidProfile) => void;
   onRemoveChild?: (kidId: string) => void;
+  onStartTrip?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPassport, onLogout, onAddChild, onEditChild, onRemoveChild }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPassport, onLogout, onAddChild, onEditChild, onRemoveChild, onStartTrip }) => {
   const totalTripsUsed = user.kids.reduce((sum, kid) => sum + kid.sessions.length, 0);
   const countTripsThisMonth = () => {
     const now = new Date();
@@ -221,7 +222,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
             </div>
 
             <div className="flex gap-2 w-full md:w-auto">
-               <Button onClick={() => onViewPassport(kid.id)}>
+               {onStartTrip && !user.email && (
+                 <Button variant="primary" onClick={onStartTrip}>
+                   <Map size={16} className="mr-2" /> Start Adventure
+                 </Button>
+               )}
+               <Button onClick={() => onViewPassport(kid.id)} variant={!user.email ? "outline" : "primary"}>
                  Open Passport
                </Button>
                {onEditChild && (
