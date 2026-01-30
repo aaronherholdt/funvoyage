@@ -57,7 +57,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto font-sans">
+    <div className="p-4 md:p-6 px-safe pb-safe max-w-5xl mx-auto font-sans">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
         <div>
@@ -87,7 +87,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
       </div>
 
       {/* Usage Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
         <div className="bg-gradient-to-br from-teal-600 to-teal-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
           <div className="absolute right-0 top-0 opacity-10 transform translate-x-1/3 -translate-y-1/3">
              <Map size={120} />
@@ -187,7 +187,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
       </div>
       <div className="grid grid-cols-1 gap-4">
         {user.kids.map(kid => (
-          <div key={kid.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col md:flex-row items-start md:items-center gap-6 shadow-sm hover:shadow-md transition-shadow">
+          <div key={kid.id} className="bg-white rounded-2xl border border-slate-200 p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center gap-4">
                <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center text-2xl border-2 border-indigo-200 text-indigo-600">
                  {kid.avatar}
@@ -201,8 +201,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
                </div>
             </div>
             
-            <div className="flex-1 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-               <div className="flex gap-2">
+            <div className="flex-1 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scroll-touch">
+               <div className="flex gap-3">
                   {kid.sessions.map(session => {
                     return (
                       <div key={session.id} className="flex-shrink-0 bg-slate-50 border border-slate-100 rounded-lg p-2 w-48">
@@ -221,7 +221,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
                </div>
             </div>
 
-            <div className="flex gap-2 w-full md:w-auto">
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
                {kid.sessions.length === 0 && onAddTrip ? (
                  <Button variant="primary" onClick={onAddTrip}>
                    <Compass size={16} className="mr-2" /> Start New Adventure

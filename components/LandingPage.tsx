@@ -25,7 +25,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-100 text-teal-800 font-bold text-sm uppercase tracking-wide mb-4">
                     <Brain size={16} /> The FunVoyage Way
                 </div>
-                <h2 className="font-kid text-4xl md:text-6xl text-slate-900 mb-6">Don't just see the world. <br /><span className="text-teal-600">Understand it.</span></h2>
+                <h2 className="font-kid text-3xl sm:text-4xl md:text-5xl lg:text-6xl text-slate-900 mb-6">Don't just see the world. <br /><span className="text-teal-600">Understand it.</span></h2>
                 <p className="text-xl text-slate-600 leading-relaxed">
                     Travel is the ultimate classroom. But without reflection, memories fade.
                     We combine <span className="font-bold text-sand-800">Inquiry-Based Learning</span> with digital journaling to turn every trip into a lesson in curiosity.
@@ -65,8 +65,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                 </div>
             </div>
 
-            <div className="mt-16 bg-mesh-dark rounded-bento p-8 md:p-12 max-w-6xl mx-auto relative overflow-hidden">
-                <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+            <div className="mt-16 bg-mesh-dark rounded-bento p-6 md:p-8 lg:p-12 max-w-6xl mx-auto relative overflow-hidden">
+                <div className="relative z-10 flex flex-col lg:flex-row items-center gap-8">
                     <div className="flex-1">
                         <h3 className="text-3xl font-bold text-white mb-4">Perfect for Worldschooling</h3>
                         <p className="text-slate-400 text-lg mb-6">
@@ -95,7 +95,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-100 text-indigo-800 font-bold text-sm uppercase tracking-wide mb-4">
                     <Shield size={16} /> Parent-First Safety
                 </div>
-                <h2 className="font-kid text-4xl md:text-6xl text-slate-900 mb-6">A Walled Garden for <br /><span className="text-indigo-600">Digital Nomads.</span></h2>
+                <h2 className="font-kid text-3xl sm:text-4xl md:text-5xl lg:text-6xl text-slate-900 mb-6">A Walled Garden for <br /><span className="text-indigo-600">Digital Nomads.</span></h2>
                 <p className="text-xl text-slate-600 leading-relaxed">
                     We know the internet is scary. That's why FunVoyage is built like a fortress.
                     You hold the keys; your children just enjoy the room.
@@ -165,13 +165,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-100 text-orange-800 font-bold text-sm uppercase tracking-wide mb-4">
                     <Crown size={16} /> Simple Pricing
                 </div>
-                <h2 className="font-kid text-4xl md:text-6xl text-slate-900 mb-6">Invest in their <br /><span className="text-orange-500">memories.</span></h2>
+                <h2 className="font-kid text-3xl sm:text-4xl md:text-5xl lg:text-6xl text-slate-900 mb-6">Invest in their <br /><span className="text-orange-500">memories.</span></h2>
                 <p className="text-xl text-slate-600 leading-relaxed">
                     Cheaper than a single museum ticket, but lasts a lifetime. Take your first trip free without an account, then move into Starter or Pro when you're ready for monthly adventures.
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto items-stretch">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto items-stretch">
 
                 {/* Free Tier */}
                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 relative flex flex-col">
@@ -200,7 +200,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                 </div>
 
                 {/* Pro Tier */}
-                <div className="bg-teal-50 rounded-[2rem] p-8 border-2 border-teal-500 relative shadow-xl flex flex-col lg:-mt-4 lg:mb-4 z-10">
+                <div className="bg-teal-50 rounded-[2rem] p-8 border-2 border-teal-500 relative shadow-xl flex flex-col lg:-mt-4 lg:mb-4 z-10 sm:col-span-2 lg:col-span-1">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">Most Popular</div>
                     <h3 className="text-xl font-bold text-teal-900 mb-2">Explorer Pro</h3>
                     <div className="text-4xl font-bold text-slate-900 mb-1">$10<span className="text-lg text-slate-500 font-normal">/mo</span></div>
@@ -232,14 +232,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
     );
 
     const renderMainGrid = () => (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 animate-in fade-in duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 animate-in fade-in duration-500">
             {/* Hero Card */}
-            <div className="col-span-1 md:col-span-2 md:row-span-2 bg-mesh-dark rounded-bento p-8 md:p-12 flex flex-col justify-between relative overflow-hidden bento-card">
+            <div className="col-span-1 md:col-span-2 lg:row-span-2 bg-mesh-dark rounded-bento p-8 md:p-10 lg:p-12 flex flex-col justify-between relative overflow-hidden bento-card">
                 <div className="relative z-10">
                     <span className="inline-block px-4 py-1.5 rounded-full bg-coral-500/20 text-coral-200 text-xs font-bold uppercase tracking-wider mb-6 border border-coral-500/30 animate-reveal-up">
                         Voice-First Travel Companion
                     </span>
-                    <h1 className="font-display text-5xl md:text-7xl text-white leading-tight mb-6 animate-reveal-up delay-100">
+                    <h1 className="font-display text-4xl sm:text-5xl lg:text-7xl text-white leading-tight mb-6 animate-reveal-up delay-100">
                         Turns trips into <span className="text-coral-300">Core Memories.</span>
                     </h1>
                     <p className="text-sand-400 text-lg md:text-xl max-w-md leading-relaxed mb-8 animate-reveal-up delay-200">
@@ -312,7 +312,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                     </div>
                 </div>
 
-                <div className="absolute bottom-6 text-center w-full opacity-0 group-hover:opacity-100 transition-opacity delay-100 pointer-events-none">
+                <div className="absolute bottom-6 text-center w-full opacity-70 group-hover:opacity-100 transition-opacity delay-100 pointer-events-none">
                     <p className="text-coral-600 text-xs font-bold">Collect them all!</p>
                 </div>
             </div>
@@ -344,12 +344,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                     </div>
                 </div>
                 <p className="absolute bottom-8 text-ocean-600 font-bold text-sm opacity-60 group-hover:opacity-100 transition-opacity">
-                    Hover to explore
+                    Tap to explore
                 </p>
             </div>
 
             {/* Age Adaptive Feature Card */}
-            <div className="col-span-1 md:col-span-2 bg-white border border-sand-200 rounded-bento p-8 flex flex-col md:flex-row items-center gap-8 bento-card">
+            <div className="col-span-1 md:col-span-2 bg-white border border-sand-200 rounded-bento p-6 md:p-8 flex flex-col md:flex-row items-center gap-6 md:gap-8 bento-card">
                 <div className="flex-1 space-y-6 w-full">
                     <div>
                         <h3 className="font-display font-bold text-sand-900 text-2xl mb-2">Grows with you.</h3>
@@ -404,7 +404,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
             {/* Privacy/Safety Card */}
             <div
                 onClick={() => setActiveSection('safety')}
-                className="col-span-1 md:col-span-2 bg-ocean-50 rounded-bento p-8 flex items-center justify-between bento-card group cursor-pointer hover:bg-ocean-100 transition-colors"
+                className="col-span-1 md:col-span-2 bg-ocean-50 rounded-bento p-6 md:p-8 flex items-center justify-between bento-card group cursor-pointer hover:bg-ocean-100 transition-colors"
             >
                 <div>
                     <div className="flex items-center gap-2 mb-2">
@@ -432,7 +432,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
     );
 
     return (
-        <div className="min-h-screen bg-mesh-warm font-sans selection:bg-coral-100 pb-12 relative texture-grain">
+        <div className="min-h-dvh bg-mesh-warm font-sans selection:bg-coral-100 pb-12 relative texture-grain px-safe">
             <style>{`
         .perspective-1000 { perspective: 1000px; }
         .transform-style-3d { transform-style: preserve-3d; }
@@ -489,7 +489,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
                     <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-2xl">🌍</div>
                     <span className="font-kid font-bold text-2xl tracking-tight text-slate-900">FunVoyage</span>
                 </div>
-                <div className="hidden md:flex gap-6 text-sm font-bold text-slate-600">
+                <div className="hidden sm:flex gap-4 md:gap-6 text-sm font-bold text-slate-600">
                     <button onClick={() => setActiveSection('methodology')} className={`hover:text-teal-600 transition-colors ${activeSection === 'methodology' ? 'text-teal-600' : ''}`}>Methodology</button>
                     <button onClick={() => setActiveSection('safety')} className={`hover:text-teal-600 transition-colors ${activeSection === 'safety' ? 'text-teal-600' : ''}`}>Safety</button>
                     <button onClick={() => setActiveSection('pricing')} className={`hover:text-teal-600 transition-colors ${activeSection === 'pricing' ? 'text-teal-600' : ''}`}>Pricing</button>
@@ -514,7 +514,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart, onLogin }) =>
 
             {/* Footer */}
             <footer className="mt-12 text-center text-slate-400 text-sm pb-8 max-w-7xl mx-auto border-t border-slate-200 pt-8">
-                <div className="flex justify-center gap-6 mb-4 md:hidden">
+                <div className="flex justify-center gap-6 mb-4 sm:hidden">
                     <button onClick={() => setActiveSection('methodology')} className="text-slate-500">Methodology</button>
                     <button onClick={() => setActiveSection('safety')} className="text-slate-500">Safety</button>
                     <button onClick={() => setActiveSection('pricing')} className="text-slate-500">Pricing</button>

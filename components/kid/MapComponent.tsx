@@ -60,7 +60,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ selectedLocation, onMapClic
         zoom={2}
         minZoom={2}
         maxZoom={18}
-        style={{ height: '300px', width: '100%' }}
+        style={{ height: 'clamp(250px, 35vw, 450px)', width: '100%' }}
         className="z-0"
         worldCopyJump={true}
       >

@@ -232,9 +232,11 @@ body {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
 }
 
-.btn-magnetic:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-float);
+@media (hover: hover) {
+  .btn-magnetic:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-float);
+  }
 }
 
 .btn-magnetic:active {
@@ -271,11 +273,17 @@ body {
   pointer-events: none;
 }
 
-.bento-card:hover {
-  transform: translateY(-6px) scale(1.01);
-  box-shadow: 
-    0 32px 64px -12px hsla(var(--color-sand-900), 0.15),
-    0 0 0 1px hsla(var(--color-sand-300), 0.3);
+@media (hover: hover) {
+  .bento-card:hover {
+    transform: translateY(-6px) scale(1.01);
+    box-shadow:
+      0 32px 64px -12px hsla(var(--color-sand-900), 0.15),
+      0 0 0 1px hsla(var(--color-sand-300), 0.3);
+  }
+}
+
+.bento-card:active {
+  transform: scale(0.98);
 }
 
 /* Audio visualizer bar */
@@ -288,6 +296,123 @@ body {
 .visualizer-bar:nth-child(3) { animation-delay: 0.2s; }
 .visualizer-bar:nth-child(4) { animation-delay: 0.3s; }
 .visualizer-bar:nth-child(5) { animation-delay: 0.4s; }
+
+/* ========================================
+   iOS & ANDROID MOBILE FIXES
+   ======================================== */
+
+/* Prevent iOS text size adjust after orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Prevent iOS Safari rubber-band overscroll on full-screen views */
+body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* iOS input zoom prevention: inputs < 16px cause Safari to zoom.
+   Force all inputs/textareas/selects to 16px minimum on mobile. */
+@media screen and (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Remove iOS default input styling (rounded corners, inner shadow) */
+input, textarea, select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+/* Fix iOS Safari textarea resize handle */
+textarea {
+  resize: none;
+}
+
+/* Prevent callout on long-press (iOS) for interactive elements */
+.no-callout {
+  -webkit-touch-callout: none;
+}
+
+/* Fix iOS Safari tap highlight color */
+a, button, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure minimum 44px touch targets (iOS HIG) / 48dp (Android Material) */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (pointer: coarse) {
+  /* On touch devices, enforce minimum button sizing */
+  button, [role="button"], a {
+    min-height: 44px;
+  }
+}
+
+/* ========================================
+   VIEWPORT & SAFE AREA
+   ======================================== */
+
+/* Dynamic viewport height - accounts for mobile/tablet browser chrome */
+.min-h-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Safe area padding for notched devices and tablet gestures */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Combined safe area for landscape orientation on notched devices */
+.px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Touch-friendly horizontal scroll */
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.scroll-touch > * {
+  scroll-snap-align: start;
+}
+
+.scroll-touch::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent pull-to-refresh interfering with scroll containers */
+.overscroll-contain {
+  overscroll-behavior: contain;
+}
 
 /* ========================================
    SCROLLBAR

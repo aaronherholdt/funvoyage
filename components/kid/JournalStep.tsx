@@ -151,7 +151,7 @@ export const JournalStep: React.FC<JournalStepProps> = ({
     };
 
     return (
-        <div className={`min-h-screen ${theme.containerBg} flex flex-col`}>
+        <div className={`min-h-dvh ${theme.containerBg} flex flex-col overscroll-contain`}>
             {/* Header */}
             <header className="bg-white/80 backdrop-blur-md p-4 border-b border-sand-100 flex items-center justify-between sticky top-0 z-10">
                 <Button variant="ghost" size="sm" onClick={onBack} className="text-sand-500">
@@ -165,7 +165,7 @@ export const JournalStep: React.FC<JournalStepProps> = ({
             </header>
 
             {/* Main Content */}
-            <div className="flex-1 p-6 flex flex-col max-w-2xl mx-auto w-full">
+            <div className="flex-1 p-4 md:p-6 px-safe flex flex-col max-w-2xl mx-auto w-full">
                 <div className="mb-6">
                     <h1 className={`text-2xl font-bold text-slate-800 mb-2 ${theme.font}`}>
                         {getPrompt()}
@@ -181,7 +181,7 @@ export const JournalStep: React.FC<JournalStepProps> = ({
                         value={journalText}
                         onChange={(e) => setJournalText(e.target.value)}
                         placeholder={getPlaceholder()}
-                        className={`w-full h-full min-h-[300px] p-4 rounded-2xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'
+                        className={`w-full h-full min-h-[200px] md:min-h-[300px] p-4 rounded-2xl border-2 ${isListening ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'
                             } focus:border-teal-500 focus:outline-none resize-none text-lg leading-relaxed transition-colors ${theme.font}`}
                     />
                 </div>

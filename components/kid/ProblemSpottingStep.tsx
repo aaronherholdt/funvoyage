@@ -85,7 +85,7 @@ export const ProblemSpottingStep: React.FC<ProblemSpottingStepProps> = ({
     const filledCount = problems.filter(p => p.trim() !== '').length;
 
     return (
-        <div className={`min-h-screen ${theme.containerBg} flex flex-col`}>
+        <div className={`min-h-dvh ${theme.containerBg} flex flex-col overscroll-contain`}>
             {/* Header */}
             <header className="bg-white/80 backdrop-blur-md p-4 border-b border-sand-100 flex items-center justify-between sticky top-0 z-10">
                 <Button variant="ghost" size="sm" onClick={onBack} className="text-sand-500">
@@ -99,7 +99,7 @@ export const ProblemSpottingStep: React.FC<ProblemSpottingStepProps> = ({
             </header>
 
             {/* Main Content */}
-            <div className="flex-1 p-6 flex flex-col max-w-2xl mx-auto w-full">
+            <div className="flex-1 p-4 md:p-6 px-safe flex flex-col max-w-2xl mx-auto w-full">
                 <div className="mb-8">
                     <h1 className={`text-2xl font-bold text-slate-800 mb-2 ${theme.font}`}>
                         {getTitle()}

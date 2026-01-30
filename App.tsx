@@ -1210,7 +1210,7 @@ const App: React.FC = () => {
   // --- RENDER HELPERS ---
 
   const renderOnboarding = () => (
-    <div className="min-h-screen bg-indigo-50 flex items-center justify-center p-4">
+    <div className="min-h-dvh bg-indigo-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full border border-indigo-100 relative">
         <Button
           variant="ghost"
@@ -1266,8 +1266,8 @@ const App: React.FC = () => {
   const renderAuth = () => {
     const isLogin = authMode === 'login';
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center p-4">
-        <div className="max-w-5xl w-full grid md:grid-cols-2 gap-6 items-stretch">
+      <div className="min-h-dvh bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center p-4">
+        <div className="max-w-5xl w-full grid lg:grid-cols-2 gap-6 items-stretch">
           <div className="bg-white/5 border border-white/10 rounded-3xl p-8 text-white shadow-2xl flex flex-col justify-between">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-wider mb-4">
@@ -1424,44 +1424,44 @@ const App: React.FC = () => {
     };
 
     return (
-      <div className="min-h-screen bg-slate-800 flex flex-col font-sans overflow-hidden relative">
+      <div className="min-h-dvh bg-slate-800 flex flex-col font-sans overflow-hidden relative overscroll-contain">
         {/* Decorative Background */}
         <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cartographer.png')] pointer-events-none"></div>
 
         {/* Header */}
-        <header className="p-4 flex items-center justify-between relative z-10 bg-slate-900/50 backdrop-blur-md border-b border-white/10">
-          <Button variant="ghost" onClick={() => setView('dashboard')} className="text-white/70 hover:bg-white/10 hover:text-white">
-            <ChevronLeft className="mr-2" /> Family Dashboard
+        <header className="p-3 md:p-4 px-safe pt-safe flex items-center justify-between relative z-10 bg-slate-900/50 backdrop-blur-md border-b border-white/10 gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setView('dashboard')} className="text-white/70 hover:bg-white/10 hover:text-white flex-shrink-0">
+            <ChevronLeft className="mr-1 md:mr-2" /> <span className="hidden sm:inline">Family Dashboard</span><span className="sm:hidden">Back</span>
           </Button>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
+          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+            <div className="text-right hidden sm:block">
               <h2 className="text-white font-bold text-sm tracking-wide uppercase">{kid?.name}'s Passport</h2>
               <p className="text-teal-400 text-xs font-medium">World Traveler</p>
             </div>
-            <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center text-xl border-2 border-teal-500 shadow-lg">
+            <div className="w-9 h-9 md:w-10 md:h-10 bg-slate-700 rounded-full flex items-center justify-center text-lg md:text-xl border-2 border-teal-500 shadow-lg flex-shrink-0">
               {kid?.avatar}
             </div>
             <Button variant="ghost" size="sm" onClick={handleLogout} className="text-white/80 hover:text-white">
-              <LogOut size={16} className="mr-2" /> Log out
+              <LogOut size={16} />
             </Button>
           </div>
         </header>
 
         {/* Slider Container */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-6 relative z-10 overflow-hidden">
 
-          <div className="w-full max-w-5xl flex items-center justify-center gap-4 md:gap-12">
+          <div className="w-full max-w-5xl flex items-center justify-center gap-3 md:gap-8 lg:gap-12">
             {/* Prev Button */}
             <button
               onClick={() => goToPage(passportPage - 1)}
               disabled={passportPage === 0}
-              className="p-3 rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-0 disabled:pointer-events-none transition-all"
+              className="p-2 md:p-3 rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-0 disabled:pointer-events-none transition-all flex-shrink-0"
             >
-              <ChevronLeft size={32} />
+              <ChevronLeft size={24} className="md:w-8 md:h-8" />
             </button>
 
             {/* Passport Viewport */}
-            <div className="relative w-full max-w-[380px] aspect-[3/4.5] perspective-1000">
+            <div className="relative w-full max-w-[320px] md:max-w-[380px] aspect-[3/4.5] perspective-1000">
 
               {/* The Sliding Track */}
               <div
@@ -1568,9 +1568,9 @@ const App: React.FC = () => {
             <button
               onClick={() => goToPage(passportPage + 1)}
               disabled={passportPage === totalPages - 1}
-              className="p-3 rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-0 disabled:pointer-events-none transition-all"
+              className="p-2 md:p-3 rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-0 disabled:pointer-events-none transition-all flex-shrink-0"
             >
-              <ChevronRight size={32} />
+              <ChevronRight size={24} className="md:w-8 md:h-8" />
             </button>
           </div>
 
@@ -1592,7 +1592,7 @@ const App: React.FC = () => {
   const renderMemoryDetail = () => {
     if (!viewingSession) return null;
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+      <div className="min-h-dvh bg-slate-50 flex flex-col font-sans">
         <header className="bg-white p-4 flex items-center shadow-sm sticky top-0 z-10 border-b border-slate-200">
           <Button variant="ghost" onClick={() => requireAuthForPassport()} className="text-slate-600">
             <ChevronLeft className="mr-2" /> Back
@@ -1602,7 +1602,7 @@ const App: React.FC = () => {
           </h2>
           <div className="w-10"></div>
         </header>
-        <div className="p-6 max-w-3xl mx-auto w-full space-y-8">
+        <div className="p-4 md:p-6 max-w-3xl mx-auto w-full space-y-6 md:space-y-8">
           {/* Summary Card */}
           <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
             <h3 className="text-teal-600 font-bold uppercase tracking-wider text-xs mb-4">Travel Log Summary</h3>
@@ -1655,13 +1655,13 @@ const App: React.FC = () => {
     const kid = user?.kids.find(k => k.id === activeKidId);
 
     return (
-      <div className="min-h-screen bg-white flex flex-col font-sans">
-        <header className="bg-white p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 z-10">
+      <div className="min-h-dvh bg-white flex flex-col font-sans overscroll-contain">
+        <header className="bg-white p-4 md:px-8 px-safe border-b border-slate-100 flex items-center justify-between sticky top-0 z-10 pt-safe">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">{getFlagEmoji(activeSession.countryCode!)}</span>
+            <span className="text-3xl md:text-4xl">{getFlagEmoji(activeSession.countryCode!)}</span>
             <div>
-              <h2 className="font-bold text-lg text-slate-800 leading-none">{activeSession.city || activeSession.countryName}</h2>
-              <p className="text-xs text-slate-400 mt-1">Recording Session • Nia is listening</p>
+              <h2 className="font-bold text-lg md:text-xl text-slate-800 leading-none">{activeSession.city || activeSession.countryName}</h2>
+              <p className="text-xs md:text-sm text-slate-400 mt-1">Recording Session • Nia is listening</p>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={handleExitSession} className="text-red-400 hover:bg-red-50">
@@ -1689,7 +1689,7 @@ const App: React.FC = () => {
           />
 
           {/* Finish Session Button */}
-          <div className="absolute bottom-24 left-0 right-0 flex justify-center">
+          <div className="absolute bottom-28 md:bottom-32 left-0 right-0 flex justify-center z-10">
             <Button
               variant="secondary"
               size="sm"
@@ -1707,7 +1707,7 @@ const App: React.FC = () => {
   const renderCompletion = () => {
     if (isAnalyzing) {
       return (
-        <div className="min-h-screen bg-teal-600 flex flex-col items-center justify-center text-white font-sans">
+        <div className="min-h-dvh bg-teal-600 flex flex-col items-center justify-center text-white font-sans">
           <div className="bg-white/20 p-6 rounded-full mb-6 backdrop-blur-sm animate-pulse">
             <Loader2 size={48} className="animate-spin" />
           </div>
@@ -1723,8 +1723,8 @@ const App: React.FC = () => {
     const isGuestUser = !user?.email;
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-600 to-teal-800 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="min-h-dvh bg-gradient-to-b from-teal-600 to-teal-800 flex items-center justify-center p-4 px-safe font-sans">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[85dvh] md:max-h-[90dvh]">
           {/* Hero */}
           <div className="bg-orange-400 p-8 text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-full opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
@@ -1848,7 +1848,7 @@ const App: React.FC = () => {
     }
 
     return (
-      <div className="min-h-screen bg-slate-900/60 flex items-center justify-center p-4 absolute inset-0 z-50 backdrop-blur-sm font-sans">
+      <div className="min-h-dvh bg-slate-900/60 flex items-center justify-center p-4 absolute inset-0 z-50 backdrop-blur-sm font-sans">
         <div className="bg-white rounded-3xl p-8 max-w-4xl w-full text-center shadow-2xl relative">
           <button onClick={() => setView('dashboard')} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
             <LogOut size={24} />
@@ -1869,7 +1869,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Starter Plan */}
             <div className="border border-slate-200 rounded-2xl p-6 bg-white hover:shadow-lg transition-shadow flex flex-col">
               <h3 className="text-slate-900 font-bold text-xl mb-2">Starter</h3>

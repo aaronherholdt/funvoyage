@@ -170,7 +170,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-teal-50 flex flex-col items-center justify-center p-4 sm:p-6">
+    <div className="min-h-dvh bg-gradient-to-br from-indigo-50 via-white to-teal-50 flex flex-col items-center justify-start md:justify-center p-4 sm:p-6 py-8 px-safe overflow-y-auto overscroll-contain">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden border border-indigo-100">
         {/* Header */}
         <div className="bg-gradient-to-r from-teal-600 to-indigo-600 p-6 text-white text-center relative overflow-hidden">

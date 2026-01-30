@@ -63,7 +63,7 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
     <div className={`flex flex-col h-full w-full mx-auto relative transition-colors duration-500 ${theme.containerBg} ${theme.font}`}>
 
       {/* Chat History Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scroll-smooth mb-32">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 md:px-8 px-safe py-6 space-y-6 scroll-smooth mb-32 overscroll-contain">
         {history.length === 0 && (
           <div className="flex items-center justify-center h-32">
             <Loader2 className={`animate-spin ${theme.navColor}`} size={32} />
@@ -81,7 +81,7 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
             >
               {/* AI Bubble */}
               {!isUser && (
-                <div className="flex items-end gap-2 max-w-[90%]">
+                <div className="flex items-end gap-2 max-w-[90%] md:max-w-[75%] lg:max-w-[65%]">
                   <div className="w-10 h-10 rounded-full bg-white flex-shrink-0 flex items-center justify-center text-xl shadow-sm border-2 border-sand-100">
                     {theme.aiAvatar}
                   </div>
@@ -96,7 +96,7 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
 
               {/* User Bubble */}
               {isUser && (
-                <div className={`${theme.bubbleUser} p-4 max-w-[85%] relative shadow-md`}>
+                <div className={`${theme.bubbleUser} p-4 max-w-[85%] md:max-w-[70%] lg:max-w-[60%] relative shadow-md`}>
                   {entry.text}
                   {/* Saved Indicator Icon */}
                   <div className="absolute -left-2 -top-2 bg-white text-green-500 rounded-full p-1 shadow-sm transform scale-0 animate-[popIn_0.3s_ease-out_0.2s_forwards]">
@@ -121,7 +121,7 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
       </div>
 
       {/* Bottom Control Bar */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white via-white/95 to-transparent pt-10">
+      <div className="absolute bottom-0 left-0 right-0 p-4 pb-safe px-safe bg-gradient-to-t from-white via-white/95 to-transparent pt-10">
         <div className="flex flex-col items-center gap-4">
 
           {/* Visualizer */}
@@ -154,14 +154,14 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
 
           {/* Text Fallback - Hidden for toddlers unless explicitly needed */}
           {theme.showText && (
-            <div className="w-full max-w-md opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
+            <div className="w-full max-w-md opacity-60 hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
               <form onSubmit={handleTextSubmit} className="flex gap-2">
                 <input
                   type="text"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                   placeholder="Type here..."
-                  className="flex-1 rounded-full border border-sand-200 bg-white px-4 py-2 text-sm focus:outline-none focus:border-ocean-500 shadow-sm"
+                  className="flex-1 rounded-full border border-sand-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:border-ocean-500 shadow-sm"
                 />
                 <Button type="submit" size="sm" variant="secondary" className="rounded-full w-10 h-10 p-0 flex items-center justify-center">
                   <Send size={14} />
