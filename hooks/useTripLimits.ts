@@ -4,6 +4,7 @@ import { getDeviceFingerprint } from '../lib/deviceFingerprint';
 
 interface TripLimitStatus {
   allowed: boolean;
+  reason?: 'limit' | 'unverified';
   currentUsage?: number;
   limit?: number;
   period?: string;
@@ -36,7 +37,7 @@ export function useTripLimits(): UseTripLimitsReturn {
         });
 
         if (!res.ok) {
-          return { allowed: true, message: 'Unable to verify limits' };
+          return { allowed: false, reason: 'unverified', message: 'Unable to verify limits. Please try again.' };
         }
 
         return await res.json();
@@ -54,7 +55,7 @@ export function useTripLimits(): UseTripLimitsReturn {
         });
 
         if (!res.ok) {
-          return { allowed: true, message: 'Unable to verify' };
+          return { allowed: false, reason: 'unverified', message: 'Unable to verify. Please try again.' };
         }
 
         const data = await res.json();
@@ -62,6 +63,7 @@ export function useTripLimits(): UseTripLimitsReturn {
         if (!data.allowed) {
           return {
             allowed: false,
+            reason: 'limit',
             message: data.message || "You've used your free trip",
             upgrade: {
               suggestedTier: UserTier.STARTER,
@@ -78,7 +80,7 @@ export function useTripLimits(): UseTripLimitsReturn {
       }
     } catch (err) {
       console.error('Trip limit check failed:', err);
-      return { allowed: true, message: 'Proceeding offline' };
+      return { allowed: false, reason: 'unverified', message: 'Unable to verify limits. Please try again.' };
     } finally {
       setIsChecking(false);
     }

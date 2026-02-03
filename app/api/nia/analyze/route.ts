@@ -4,12 +4,16 @@ import type { SessionAnalysis, SessionEntry } from '@/types';
 import { TOKEN_LIMITS } from '@/constants';
 import { AI_RATE_LIMIT, applyRateLimit, getClientIdentifier } from '@/lib/aiRateLimiter';
 import { createLogger } from '@/lib/logger';
+import { createClient } from '@/lib/supabase/server';
 
 const log = createLogger({ component: 'api/nia/analyze' });
 
 export const runtime = 'nodejs';
 
 const MODEL_NAME = 'gemini-2.5-flash';
+const MAX_SESSION_ENTRIES = 50;
+const MAX_SESSION_CHARS = 12000;
+const MAX_CONTEXT_CHARS = 200;
 
 const getClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -27,7 +31,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
   }
 
-  const identifier = getClientIdentifier(req);
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const identifier = getClientIdentifier(req, { userId: user?.id });
   const limit = await applyRateLimit(identifier);
   if (!limit.allowed) {
     return NextResponse.json(
@@ -47,6 +53,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }
 
+  if (countryName.length > MAX_CONTEXT_CHARS || (city && city.length > MAX_CONTEXT_CHARS)) {
+    return NextResponse.json({ error: 'Context too large' }, { status: 413 });
+  }
+
+  const trimmedSessionData = sessionData.slice(-MAX_SESSION_ENTRIES);
+  const totalSessionChars = trimmedSessionData.reduce((sum: number, entry: { text?: string }) => {
+    if (typeof entry.text !== 'string') return sum;
+    return sum + entry.text.length;
+  }, 0);
+
+  if (totalSessionChars > MAX_SESSION_CHARS) {
+    return NextResponse.json({ error: 'Session data too large' }, { status: 413 });
+  }
+
   const location = city ? `${city}, ${countryName}` : countryName;
   const prompt = `
     Analyze the following travel reflection conversation between an AI (Nia) and a child (Age: ${kidAge}) about ${location}.
@@ -61,7 +81,7 @@ export async function POST(req: NextRequest) {
        - Problem Solving
 
     Transcript:
-    ${JSON.stringify(sessionData)}
+    ${JSON.stringify(trimmedSessionData)}
   `;
 
   try {

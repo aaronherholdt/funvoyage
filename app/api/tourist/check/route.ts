@@ -5,17 +5,15 @@ import crypto from 'crypto';
 
 const log = createLogger({ component: 'api/tourist/check' });
 
-/**
- * Hash an IP address for privacy
- */
-function hashIP(ip: string): string {
-  return crypto.createHash('sha256').update(ip + process.env.IP_HASH_SALT || 'fv-salt').digest('hex');
-}
+const IP_HASH_SALT = process.env.IP_HASH_SALT;
+
+const hashWithSalt = (value: string, salt: string): string =>
+  crypto.createHash('sha256').update(value + salt).digest('hex');
 
 /**
  * Get client IP from request
  */
-function getClientIP(req: NextRequest): string {
+function getClientIP(req: NextRequest): string | null {
   // Check various headers for the real IP
   const forwarded = req.headers.get('x-forwarded-for');
   if (forwarded) {
@@ -28,7 +26,7 @@ function getClientIP(req: NextRequest): string {
   }
 
   // Fallback
-  return 'unknown';
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -42,8 +40,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!IP_HASH_SALT) {
+      log.error('Missing IP_HASH_SALT');
+      return NextResponse.json(
+        { error: 'Server misconfigured' },
+        { status: 500 }
+      );
+    }
+
     const clientIP = getClientIP(req);
-    const ipHash = hashIP(clientIP);
+    const ipHash = clientIP
+      ? hashWithSalt(clientIP, IP_HASH_SALT)
+      : hashWithSalt(deviceFingerprint, IP_HASH_SALT);
 
     // Check existing tourist usage
     const existingUsage = await checkTouristUsage(deviceFingerprint, ipHash);
@@ -87,11 +95,13 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     log.error('Tourist check failed', undefined, err);
-    // Fail open for check, fail closed for use
-    return NextResponse.json({
-      allowed: true,
-      success: true,
-      message: 'Unable to verify - proceeding',
-    });
+    return NextResponse.json(
+      {
+        allowed: false,
+        success: false,
+        error: 'Unable to verify usage. Please try again.',
+      },
+      { status: 503 }
+    );
   }
 }

@@ -14,6 +14,7 @@ interface VoiceInterfaceProps {
   history: SessionEntry[];
   onSendTextFallback: (text: string) => void;
   age: number;
+  forceTextFallback?: boolean;
 }
 
 export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
@@ -24,12 +25,14 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
   transcript,
   history,
   onSendTextFallback,
-  age
+  age,
+  forceTextFallback = false
 }) => {
   const [textInput, setTextInput] = useState('');
   const [visualizerBars, setVisualizerBars] = useState<number[]>([1, 1, 1, 1, 1]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const theme = getAgeTheme(age);
+  const showTextFallback = theme.showText || forceTextFallback;
 
   // Auto scroll to bottom when history adds an item
   useEffect(() => {
@@ -153,7 +156,7 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
           </p>
 
           {/* Text Fallback - Hidden for toddlers unless explicitly needed */}
-          {theme.showText && (
+          {showTextFallback && (
             <div className="w-full max-w-md opacity-60 hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
               <form onSubmit={handleTextSubmit} className="flex gap-2">
                 <input

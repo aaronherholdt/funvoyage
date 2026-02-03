@@ -111,7 +111,7 @@ export async function incrementUserTrips(
 /**
  * Get monthly trip count for a user
  */
-export async function getMonthlyTripCount(userId: string): Promise<number> {
+export async function getMonthlyTripCount(userId: string): Promise<number | null> {
   const supabase = createAdminClient();
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -127,13 +127,13 @@ export async function getMonthlyTripCount(userId: string): Promise<number> {
 
     if (error) {
       log.error('Failed to get monthly trip count', { userId }, error);
-      return 0;
+      return null;
     }
 
     return data?.reduce((sum, row) => sum + row.trip_count, 0) || 0;
   } catch (err) {
     log.error('Unexpected error getting monthly trip count', { userId }, err);
-    return 0;
+    return null;
   }
 }
 

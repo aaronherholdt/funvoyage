@@ -38,6 +38,7 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
             onClick={onClose} 
             className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
             type="button"
+            aria-label="Close add traveler modal"
           >
             <X size={24} />
           </button>
@@ -46,10 +47,11 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">
+              <label htmlFor="add-child-name" className="block text-sm font-bold text-slate-700 mb-1">
                 First Name
               </label>
               <input
+                id="add-child-name"
                 type="text"
                 value={data.name}
                 onChange={(e) => onChange({ ...data, name: e.target.value })}
@@ -59,10 +61,11 @@ export const AddChildModal: React.FC<AddChildModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">
+              <label htmlFor="add-child-age" className="block text-sm font-bold text-slate-700 mb-1">
                 Age
               </label>
               <input
+                id="add-child-age"
                 type="number"
                 min="4"
                 max="18"

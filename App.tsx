@@ -66,6 +66,27 @@ interface SpeechRecognition extends EventTarget {
 
 type AppView = 'landing' | 'auth' | 'onboarding' | 'dashboard' | 'passport' | 'add_trip' | 'journaling' | 'problem_spotting' | 'session' | 'completion' | 'upgrade' | 'memory_detail';
 
+const POST_AUTH_VIEW_KEY = 'funvoyage_post_auth_view';
+const APP_VIEWS: AppView[] = [
+  'landing',
+  'auth',
+  'onboarding',
+  'dashboard',
+  'passport',
+  'add_trip',
+  'journaling',
+  'problem_spotting',
+  'session',
+  'completion',
+  'upgrade',
+  'memory_detail',
+];
+
+const isAppView = (value: string | null): value is AppView => {
+  if (!value) return false;
+  return APP_VIEWS.includes(value as AppView);
+};
+
 const App: React.FC = () => {
   // --- GLOBAL STATE ---
   const [user, setUser] = useState<ParentUser | null>(null);
@@ -97,6 +118,7 @@ const App: React.FC = () => {
   const [transcript, setTranscript] = useState('');
   const [aiRateLimitMessage, setAiRateLimitMessage] = useState<string | null>(null);
   const [aiRateLimitUntil, setAiRateLimitUntil] = useState<number | null>(null);
+  const [speechAvailable, setSpeechAvailable] = useState(true);
 
   // --- JOURNALING & PROBLEM-SOLVING STATE ---
   const [journalEntry, setJournalEntry] = useState('');
@@ -127,6 +149,27 @@ const App: React.FC = () => {
     suggestedTier: UserTier;
     message: string;
   } | null>(null);
+  const [tripLimitError, setTripLimitError] = useState<string | null>(null);
+
+  const persistPostAuthView = (value: AppView | null) => {
+    if (typeof window === 'undefined') return;
+    if (value) {
+      sessionStorage.setItem(POST_AUTH_VIEW_KEY, value);
+    } else {
+      sessionStorage.removeItem(POST_AUTH_VIEW_KEY);
+    }
+  };
+
+  const readPostAuthView = () => {
+    if (typeof window === 'undefined') return null;
+    const stored = sessionStorage.getItem(POST_AUTH_VIEW_KEY);
+    return isAppView(stored) ? stored : null;
+  };
+
+  const setPostAuthViewPersisted = (value: AppView | null) => {
+    setPostAuthView(value);
+    persistPostAuthView(value);
+  };
 
   // --- REFS ---
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -141,23 +184,6 @@ const App: React.FC = () => {
   const transcriptBufferRef = useRef('');
   const aiCallTimestampsRef = useRef<number[]>([]);
   const aiSessionIdRef = useRef<string>('');
-
-  // --- AUTH HELPERS ---
-  const bufferToBase64 = (buffer: ArrayBuffer) => {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    bytes.forEach(b => binary += String.fromCharCode(b));
-    return btoa(binary);
-  };
-
-  const generateSalt = () => bufferToBase64(window.crypto.getRandomValues(new Uint8Array(16)).buffer);
-
-  const hashPassword = async (password: string, salt: string) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + salt);
-    const digest = await window.crypto.subtle.digest('SHA-256', data);
-    return bufferToBase64(digest);
-  };
 
   // --- AI RATE LIMITING HELPERS ---
   const setRateLimitWarning = (retryAfterMs?: number) => {
@@ -310,11 +336,15 @@ const App: React.FC = () => {
     if (!supabaseSession && storedUser) {
       try {
         const parsedUser: ParentUser = JSON.parse(storedUser);
-        const sanitizedTier = parsedUser.tier === UserTier.GUEST ? UserTier.GUEST : UserTier.FREE;
-        const sanitizedUser = { ...parsedUser, tier: sanitizedTier };
-        setUser(sanitizedUser);
-        setActiveKidId(storedKidId || sanitizedUser.kids?.[0]?.id || null);
-        setView('dashboard');
+        if (parsedUser.email) {
+          localStorage.removeItem('funvoyage_user');
+        } else {
+          const sanitizedTier = parsedUser.tier === UserTier.GUEST ? UserTier.GUEST : UserTier.FREE;
+          const sanitizedUser = { ...parsedUser, tier: sanitizedTier };
+          setUser(sanitizedUser);
+          setActiveKidId(storedKidId || sanitizedUser.kids?.[0]?.id || null);
+          setView('dashboard');
+        }
       } catch (err) {
         console.error('Failed to hydrate stored user', err);
       }
@@ -325,24 +355,21 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!hasHydratedUser) return;
-    if (user) {
+    if (user && !user.email) {
       localStorage.setItem('funvoyage_user', JSON.stringify(user));
-      if (user.email) {
-        const accountsRaw = localStorage.getItem('funvoyage_accounts');
-        const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
-        const existing = accounts[user.email.toLowerCase()] || {};
-        accounts[user.email.toLowerCase()] = { ...existing, user };
-        localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
-      }
+      return;
     }
+    localStorage.removeItem('funvoyage_user');
   }, [user, hasHydratedUser]);
 
   useEffect(() => {
     if (!hasHydratedUser) return;
-    if (activeKidId) {
+    if (activeKidId && user && !user.email) {
       localStorage.setItem('funvoyage_activeKid', activeKidId);
+      return;
     }
-  }, [activeKidId, hasHydratedUser]);
+    localStorage.removeItem('funvoyage_activeKid');
+  }, [activeKidId, hasHydratedUser, user]);
 
   useEffect(() => {
     if (!aiRateLimitUntil) return;
@@ -360,6 +387,7 @@ const App: React.FC = () => {
   }, [aiRateLimitUntil]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     if ('webkitSpeechRecognition' in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
@@ -368,6 +396,9 @@ const App: React.FC = () => {
         recognitionRef.current.interimResults = true;
         recognitionRef.current.lang = 'en-US';
       }
+      setSpeechAvailable(true);
+    } else {
+      setSpeechAvailable(false);
     }
   }, []);
 
@@ -408,6 +439,7 @@ const App: React.FC = () => {
     recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setIsListening(false);
+        setSpeechAvailable(false);
       }
     };
 
@@ -419,11 +451,8 @@ const App: React.FC = () => {
       const email = supabaseSession.user.email?.toLowerCase();
       if (!email) return;
 
-      const accountsRaw = localStorage.getItem('funvoyage_accounts');
-      const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
-      const existing = accounts[email]?.user as ParentUser | undefined;
       const guestUser = user && !user.email ? user : null;
-      const currentUser = user?.email === email ? user : existing;
+      const currentUser = user?.email === email ? user : null;
 
       // Fetch remote data (tier and kids)
       const [supabaseTier, remoteKids] = await Promise.all([
@@ -480,12 +509,11 @@ const App: React.FC = () => {
         await syncKidsToSupabase(supabaseSession.user.id, enforcedKids);
       }
 
-      accounts[email] = { ...(accounts[email] || {}), user: syncedUser };
-      localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+      const resolvedPostAuthView = postAuthView || readPostAuthView();
       setUser(syncedUser);
       setActiveKidId(enforcedKids[0]?.id || null);
-      setView(wasChildListTrimmed ? 'upgrade' : (postAuthView || 'dashboard'));
-      setPostAuthView(null);
+      setView(wasChildListTrimmed ? 'upgrade' : (resolvedPostAuthView || 'dashboard'));
+      setPostAuthViewPersisted(null);
     };
 
     syncSupabaseUser();
@@ -496,7 +524,7 @@ const App: React.FC = () => {
   const handleStartAuth = (mode: 'login' | 'signup') => {
     setAuthMode(mode);
     setAuthError('');
-    setPostAuthView(null);
+    setPostAuthViewPersisted(null);
     setAuthData(prev => ({ ...prev, password: '', confirmPassword: '' }));
     if (mode === 'signup') {
       setOnboardingData({ name: '', age: '' });
@@ -507,13 +535,13 @@ const App: React.FC = () => {
   const handleStartOnboarding = () => {
     setAuthMode('signup');
     setAuthError('');
-    setPostAuthView(null);
+    setPostAuthViewPersisted(null);
     setAuthData({ parentName: '', email: '', password: '', confirmPassword: '' });
     setOnboardingData({ name: '', age: '' });
     setView('onboarding');
   };
 
-  const handleCompleteOnboarding = () => {
+  const handleCompleteOnboarding = async () => {
     const kidId = `k-${Date.now()}`;
     const newKid: KidProfile = {
       id: kidId,
@@ -525,30 +553,27 @@ const App: React.FC = () => {
       badges: []
     };
 
+    if (supabaseSession?.user?.id && user?.email) {
+      const updatedKids = [...(user.kids || []), newKid];
+      setUser({ ...user, kids: updatedKids });
+      setActiveKidId(kidId);
+      await syncKidsToSupabase(supabaseSession.user.id, updatedKids);
+      setView('passport');
+      return;
+    }
+
     const newUser: ParentUser = {
-      id: authData.email ? `u-${authData.email}` : `u-${Date.now()}`,
+      id: `u-${Date.now()}`,
       name: authData.parentName || 'Parent Explorer',
-      email: authData.email || null,
-      tier: authData.email ? UserTier.FREE : UserTier.GUEST,
+      email: null,
+      tier: UserTier.GUEST,
       kids: [newKid]
     };
 
-    if (newUser.email) {
-      const accountsRaw = localStorage.getItem('funvoyage_accounts');
-      const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
-      const salt = accounts[newUser.email]?.passwordSalt || generateSalt();
-      const passwordHash = accounts[newUser.email]?.passwordHash || '';
-      accounts[newUser.email] = { user: newUser, passwordSalt: salt, passwordHash };
-      localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
-    }
     setUser(newUser);
     setActiveKidId(kidId);
-    if (!authData.email) {
-      setNewTripData({ countryCode: '', city: '' });
-      setView('add_trip'); // Guests jump straight into trying the experience
-      return;
-    }
-    setView('passport'); // Go straight to kid mode for signed-in flow
+    setNewTripData({ countryCode: '', city: '' });
+    setView('add_trip'); // Guests jump straight into trying the experience
   };
 
   const handleAuthSubmit = async () => {
@@ -558,89 +583,50 @@ const App: React.FC = () => {
       return;
     }
     setAuthData(prev => ({ ...prev, email }));
-    const accountsRaw = localStorage.getItem('funvoyage_accounts');
-    const accounts = accountsRaw ? JSON.parse(accountsRaw) : {};
-    if (authMode === 'login') {
-      const existing = accounts[email];
-      if (!existing) {
-        setAuthError('No account found for that email. Sign up to start fresh.');
-        return;
-      }
-      if (!authData.password) {
-        setAuthError('Enter your password to continue.');
-        return;
-      }
-      if (existing.passwordSalt && existing.passwordHash) {
-        const computed = await hashPassword(authData.password, existing.passwordSalt);
-        if (computed !== existing.passwordHash) {
-          setAuthError('Incorrect password. Try again.');
-          return;
-        }
-        setAuthError('');
-        const resolvedUser: ParentUser = existing.user || existing;
-        setUser(resolvedUser);
-        setActiveKidId(resolvedUser.kids?.[0]?.id || null);
-        setView(postAuthView || 'dashboard');
-        setPostAuthView(null);
-        return;
-      }
-      if (authData.password.length < 8) {
-        setAuthError('Set a new password (min 8 characters) to secure your account.');
-        return;
-      }
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(authData.password, salt);
-      accounts[email] = { ...existing, user: existing.user || existing, passwordSalt: salt, passwordHash };
-      localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
+    if (!authData.password) {
+      setAuthError('Enter your password to continue.');
+      return;
+    }
+
+    try {
       setAuthError('');
-      const resolvedUser: ParentUser = existing.user || existing;
-      setUser(resolvedUser);
-      setActiveKidId(resolvedUser.kids?.[0]?.id || null);
-      setView(postAuthView || 'dashboard');
-      setPostAuthView(null);
-      return;
-    }
-    if (authData.password.length < 8) {
-      setAuthError('Password must be at least 8 characters.');
-      return;
-    }
-    if (authData.password !== authData.confirmPassword) {
-      setAuthError('Passwords do not match.');
-      return;
-    }
-    const salt = generateSalt();
-    const passwordHash = await hashPassword(authData.password, salt);
-    let nextUser: ParentUser;
-    if (user && !user.email) {
-      nextUser = {
-        ...user,
+
+      if (authMode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password: authData.password,
+        });
+        if (error) throw error;
+        setPostAuthViewPersisted(postAuthView || 'dashboard');
+        return;
+      }
+
+      if (authData.password.length < 8) {
+        setAuthError('Password must be at least 8 characters.');
+        return;
+      }
+      if (authData.password !== authData.confirmPassword) {
+        setAuthError('Passwords do not match.');
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signUp({
         email,
-        name: authData.parentName || user.name,
-        tier: user.tier === UserTier.GUEST ? UserTier.FREE : user.tier
-      };
-    } else if (accounts[email]?.user) {
-      nextUser = { ...(accounts[email].user as ParentUser) };
-    } else {
-      nextUser = {
-        id: `u-${email}`,
-        name: authData.parentName || 'Parent Explorer',
-        email,
-        tier: UserTier.FREE,
-        kids: []
-      };
-    }
-    accounts[email] = { ...(accounts[email] || {}), passwordSalt: salt, passwordHash, user: nextUser };
-    localStorage.setItem('funvoyage_accounts', JSON.stringify(accounts));
-    setAuthError('');
-    setUser(nextUser);
-    setActiveKidId(nextUser.kids?.[0]?.id || null);
-    const hasKids = nextUser.kids && nextUser.kids.length > 0;
-    if (hasKids) {
-      setView(postAuthView || 'dashboard');
-      setPostAuthView(null);
-    } else {
-      setView('onboarding');
-      setPostAuthView(null);
+        password: authData.password,
+        options: {
+          data: { full_name: authData.parentName || 'Parent Explorer' },
+        },
+      });
+      if (error) throw error;
+
+      if (!data.session) {
+        setAuthError('Check your email to confirm your account.');
+        return;
+      }
+
+      setPostAuthViewPersisted(postAuthView || 'dashboard');
+    } catch (err: any) {
+      setAuthError(err?.message ?? 'Authentication failed. Please try again.');
     }
   };
 
@@ -661,7 +647,7 @@ const App: React.FC = () => {
     setJournalEntry('');
     setIdentifiedProblems([]);
     setIsAnalyzing(false);
-    setPostAuthView(null);
+    setPostAuthViewPersisted(null);
     setAuthData({ parentName: '', email: '', password: '', confirmPassword: '' });
     setOnboardingData({ name: '', age: '' });
     setView('landing');
@@ -673,10 +659,13 @@ const App: React.FC = () => {
     try {
       setAuthError('');
       setOauthLoading(true);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+      const redirectBase = (appUrl && appUrl.length > 0 ? appUrl : window.location.origin).replace(/\/$/, '');
+      const redirectTo = `${redirectBase}/auth/callback?next=${encodeURIComponent('/dashboard')}`;
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo,
         },
       });
       if (error) throw error;
@@ -833,24 +822,29 @@ const App: React.FC = () => {
   const requireAuthForPassport = (kidId?: string) => {
     if (kidId) setActiveKidId(kidId);
     if (user?.email) {
-      setPostAuthView(null);
+      setPostAuthViewPersisted(null);
       setView('passport');
       return;
     }
     setAuthMode('signup');
     setAuthError('');
-    setPostAuthView('passport');
+    setPostAuthViewPersisted('passport');
     setView('auth');
   };
 
   const handleAddTripClick = async () => {
     if (!user) return;
+    setTripLimitError(null);
 
     // Check trip limits via API (uses Supabase tracking)
     const isAuthenticated = !!user.email;
     const limitStatus = await checkTripLimit(isAuthenticated);
 
     if (!limitStatus.allowed) {
+      if (limitStatus.reason === 'unverified') {
+        setTripLimitError(limitStatus.message || 'Unable to verify limits. Please try again.');
+        return;
+      }
       // Show upgrade prompt
       if (limitStatus.upgrade) {
         setUpgradePromptData(limitStatus.upgrade);
@@ -1190,7 +1184,7 @@ const App: React.FC = () => {
     }
 
     if (!supabaseSession?.user?.id) {
-      setPostAuthView('upgrade');
+      setPostAuthViewPersisted('upgrade');
       setUpgradeError('Please sign in to upgrade your plan.');
       setView('auth');
       return;
@@ -1228,8 +1222,9 @@ const App: React.FC = () => {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">First Name</label>
+            <label htmlFor="onboarding-name" className="block text-sm font-bold text-slate-700 mb-1">First Name</label>
             <input
+              id="onboarding-name"
               type="text"
               value={onboardingData.name}
               onChange={(e) => setOnboardingData({ ...onboardingData, name: e.target.value })}
@@ -1238,8 +1233,9 @@ const App: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">Age</label>
+            <label htmlFor="onboarding-age" className="block text-sm font-bold text-slate-700 mb-1">Age</label>
             <input
+              id="onboarding-age"
               type="number"
               value={onboardingData.age}
               onChange={(e) => setOnboardingData({ ...onboardingData, age: e.target.value })}
@@ -1322,8 +1318,9 @@ const App: React.FC = () => {
 
             {!isLogin && (
               <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Parent Name</label>
+                <label htmlFor="auth-parent-name" className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Parent Name</label>
                 <input
+                  id="auth-parent-name"
                   type="text"
                   value={authData.parentName}
                   onChange={(e) => setAuthData(prev => ({ ...prev, parentName: e.target.value }))}
@@ -1334,8 +1331,9 @@ const App: React.FC = () => {
             )}
 
             <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Email</label>
+              <label htmlFor="auth-email" className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Email</label>
               <input
+                id="auth-email"
                 type="email"
                 value={authData.email}
                 onChange={(e) => setAuthData(prev => ({ ...prev, email: e.target.value }))}
@@ -1345,8 +1343,9 @@ const App: React.FC = () => {
             </div>
 
             <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
+              <label htmlFor="auth-password" className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
               <input
+                id="auth-password"
                 type="password"
                 value={authData.password}
                 onChange={(e) => setAuthData(prev => ({ ...prev, password: e.target.value }))}
@@ -1354,14 +1353,15 @@ const App: React.FC = () => {
                 placeholder={isLogin ? "Enter your password" : "At least 8 characters"}
               />
               {!isLogin && (
-                <p className="text-[11px] text-slate-500 mt-1">We hash + salt on your device. Needed if you lose this device.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Your password is handled securely by our authentication provider.</p>
               )}
             </div>
 
             {!isLogin && (
               <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Confirm Password</label>
+                <label htmlFor="auth-confirm-password" className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Confirm Password</label>
                 <input
+                  id="auth-confirm-password"
                   type="password"
                   value={authData.confirmPassword}
                   onChange={(e) => setAuthData(prev => ({ ...prev, confirmPassword: e.target.value }))}
@@ -1446,6 +1446,13 @@ const App: React.FC = () => {
             </Button>
           </div>
         </header>
+
+        {tripLimitError && (
+          <div className="mx-4 mt-3 mb-1 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+            <AlertTriangle size={16} className="mt-0.5 text-amber-500" />
+            <span>{tripLimitError}</span>
+          </div>
+        )}
 
         {/* Slider Container */}
         <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-6 relative z-10 overflow-hidden">
@@ -1686,6 +1693,7 @@ const App: React.FC = () => {
             history={history}
             onSendTextFallback={handleUserResponse}
             age={kid?.age || 8}
+            forceTextFallback={!speechAvailable}
           />
 
           {/* Finish Session Button */}

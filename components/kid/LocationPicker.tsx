@@ -186,12 +186,13 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
         <div className="p-4 sm:p-6 space-y-4">
           {/* Search Input */}
           <div className="relative">
-            <label className="block text-sm font-bold text-slate-700 mb-2">
+            <label htmlFor="location-search" className="block text-sm font-bold text-slate-700 mb-2">
               Search for a city, country, or island
             </label>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
               <input
+                id="location-search"
                 ref={inputRef}
                 type="text"
                 value={query}
@@ -212,6 +213,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
                   type="button"
                   onClick={clearSelection}
                   className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label="Clear selected location"
                 >
                   <X size={20} />
                 </button>
@@ -269,6 +271,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
                 type="button"
                 onClick={clearSelection}
                 className="text-slate-400 hover:text-slate-600 p-1"
+                aria-label="Clear selected location"
               >
                 <X size={18} />
               </button>

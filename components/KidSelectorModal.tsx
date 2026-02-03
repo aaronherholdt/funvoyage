@@ -31,6 +31,7 @@ export const KidSelectorModal: React.FC<KidSelectorModalProps> = ({
           <button 
             onClick={onClose} 
             className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+            aria-label="Close traveler picker"
           >
             <X size={24} />
           </button>

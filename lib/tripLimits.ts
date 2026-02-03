@@ -33,31 +33,35 @@ export async function checkTripLimit(
     switch (period) {
       case 'daily': {
         const usage = await getUserUsage(userId);
-        currentUsage = usage?.tripCount || 0;
+        if (!usage) {
+          throw new Error('Failed to load daily usage');
+        }
+        currentUsage = usage.tripCount;
         break;
       }
       case 'monthly': {
-        currentUsage = await getMonthlyTripCount(userId);
+        const monthlyUsage = await getMonthlyTripCount(userId);
+        if (monthlyUsage === null) {
+          throw new Error('Failed to load monthly usage');
+        }
+        currentUsage = monthlyUsage;
         break;
       }
       case 'lifetime': {
         // For lifetime limits, we need to sum all usage ever
         // For simplicity, we use monthly count (assumes account created this month)
         // In production, you'd query total trips from all time
-        currentUsage = await getMonthlyTripCount(userId);
+        const lifetimeUsage = await getMonthlyTripCount(userId);
+        if (lifetimeUsage === null) {
+          throw new Error('Failed to load lifetime usage');
+        }
+        currentUsage = lifetimeUsage;
         break;
       }
     }
   } catch (err) {
     log.error('Failed to check trip limit', { userId, tier }, err);
-    // Fail open - allow the trip if we can't check
-    return {
-      allowed: true,
-      currentUsage: 0,
-      limit,
-      period,
-      remainingTrips: limit,
-    };
+    throw err;
   }
 
   const allowed = currentUsage < limit;

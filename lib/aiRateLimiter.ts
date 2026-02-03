@@ -97,12 +97,17 @@ export const applyRateLimitSync = (identifier: string) => {
   return applyMemoryRateLimit(identifier);
 };
 
-export const getClientIdentifier = (req: NextRequest) => {
+export const getClientIdentifier = (
+  req: NextRequest,
+  opts?: { userId?: string }
+) => {
+  if (opts?.userId) return `user:${opts.userId}`;
+
   const headerId = req.headers.get('x-client-session');
-  if (headerId) return headerId.trim();
+  if (headerId) return `guest:${headerId.trim()}`;
 
   const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0].trim();
+  if (forwarded) return `ip:${forwarded.split(',')[0].trim()}`;
 
-  return req.ip || 'anonymous';
+  return `ip:${req.ip || 'anonymous'}`;
 };

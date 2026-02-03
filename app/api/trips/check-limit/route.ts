@@ -47,10 +47,12 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     log.error('Trip limit check failed', undefined, err);
-    // Fail open - allow the trip
-    return NextResponse.json({
-      allowed: true,
-      message: 'Unable to verify limits - proceeding',
-    });
+    return NextResponse.json(
+      {
+        allowed: false,
+        message: 'Unable to verify limits. Please try again.',
+      },
+      { status: 503 }
+    );
   }
 }
