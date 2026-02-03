@@ -21,13 +21,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#fdfcfa" />
         <script src="https://accounts.google.com/gsi/client" async defer />
       </head>
-      <body className="antialiased overscroll-none">
-        {/* TEST BANNER - Remove before merging to main */}
-        <div className="bg-purple-600 text-white text-center py-3 px-4 font-bold">
-          THIS IS THE PREVIEW VERSION
-        </div>
-        {children}
-      </body>
+      <body className="antialiased overscroll-none">{children}</body>
     </html>
   );
 }
