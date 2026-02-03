@@ -48,15 +48,11 @@ CREATE POLICY "Users can insert their own usage" ON usage_tracking
 CREATE POLICY "Users can update their own usage" ON usage_tracking
   FOR UPDATE USING (auth.uid() = user_id);
 
--- Policies for tourist_usage (public can insert, only service role can read all)
-CREATE POLICY "Anyone can check tourist usage" ON tourist_usage
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can insert tourist usage" ON tourist_usage
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Anyone can update tourist usage" ON tourist_usage
-  FOR UPDATE USING (true);
+-- Policies for tourist_usage (service role only)
+CREATE POLICY "Service role only" ON tourist_usage
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
 
 -- Function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

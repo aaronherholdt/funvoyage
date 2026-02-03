@@ -6,6 +6,18 @@ export const metadata: Metadata = {
   description: 'Turn trips into core memories with AI-powered travel journaling for kids',
 };
 
+function PreviewBanner() {
+  const isPreview = process.env.VERCEL_ENV === 'preview';
+
+  if (!isPreview) return null;
+
+  return (
+    <div className="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium">
+      Preview Deployment - This is not production
+    </div>
+  );
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -21,7 +33,10 @@ export default function RootLayout({
         <meta name="theme-color" content="#fdfcfa" />
         <script src="https://accounts.google.com/gsi/client" async defer />
       </head>
-      <body className="antialiased overscroll-none">{children}</body>
+      <body className="antialiased overscroll-none">
+        <PreviewBanner />
+        {children}
+      </body>
     </html>
   );
 }
