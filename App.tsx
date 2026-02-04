@@ -320,6 +320,21 @@ const App: React.FC = () => {
     return Array.from(kidMap.values());
   };
 
+  // --- OAUTH CALLBACK GUARD ---
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+    if (!code) return;
+    if (url.pathname.startsWith('/auth/callback')) return;
+
+    const next = url.searchParams.get('next') || '/dashboard';
+    const callbackUrl = new URL('/auth/callback', url.origin);
+    callbackUrl.searchParams.set('code', code);
+    callbackUrl.searchParams.set('next', next);
+    window.location.replace(callbackUrl.toString());
+  }, []);
+
   // --- INITIALIZATION ---
   useEffect(() => {
     if (hasHydratedUser || supabaseSessionLoading) return;
