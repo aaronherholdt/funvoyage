@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkTouristUsage, markTouristTripUsed } from '@/lib/usageTracking';
+import { checkTouristUsage, completeTouristTrip, reserveTouristTrip } from '@/lib/usageTracking';
 import { createLogger } from '@/lib/logger';
 import crypto from 'crypto';
 
@@ -31,7 +31,7 @@ function getClientIP(req: NextRequest): string | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const { deviceFingerprint, action } = await req.json();
+    const { deviceFingerprint, action, sessionId } = await req.json();
 
     if (!deviceFingerprint || typeof deviceFingerprint !== 'string') {
       return NextResponse.json(
@@ -56,13 +56,25 @@ export async function POST(req: NextRequest) {
     // Check existing tourist usage
     const existingUsage = await checkTouristUsage(deviceFingerprint, ipHash);
 
-    if (action === 'check') {
+    if (action === 'check' || !action) {
       // Just checking if they can use free trip
-      if (existingUsage?.tripUsed) {
+      if (existingUsage?.tripUsed || existingUsage?.tripCompleted) {
         return NextResponse.json({
           allowed: false,
           reason: 'free_trip_used',
           message: 'You\'ve already used your free trip. Create an account to continue exploring!',
+        });
+      }
+
+      if (existingUsage?.tripStarted) {
+        return NextResponse.json({
+          allowed: false,
+          reason: 'active_trip',
+          message: 'You already have a trip in progress. Resume it to continue.',
+          activeTrip: {
+            sessionId: existingUsage.activeSessionId,
+            startedAt: existingUsage.startedAt,
+          },
         });
       }
 
@@ -72,25 +84,69 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (action === 'use') {
-      // Mark the free trip as used
-      if (existingUsage?.tripUsed) {
-        return NextResponse.json({
-          success: false,
-          error: 'Free trip already used',
-        });
+    if (action === 'start') {
+      if (!sessionId || typeof sessionId !== 'string') {
+        return NextResponse.json(
+          { error: 'Session ID required to start trip' },
+          { status: 400 }
+        );
       }
 
-      const success = await markTouristTripUsed(deviceFingerprint, ipHash);
+      const reservation = await reserveTouristTrip(deviceFingerprint, ipHash, sessionId);
+
+      if (!reservation.ok) {
+        if (reservation.reason === 'free_trip_used') {
+          return NextResponse.json({
+            allowed: false,
+            reason: 'free_trip_used',
+            message: 'You\'ve already used your free trip. Create an account to continue exploring!',
+          });
+        }
+        if (reservation.reason === 'active_trip') {
+          return NextResponse.json({
+            allowed: false,
+            reason: 'active_trip',
+            message: 'You already have a trip in progress. Resume it to continue.',
+            activeTrip: {
+              sessionId: reservation.record?.activeSessionId,
+              startedAt: reservation.record?.startedAt,
+            },
+          });
+        }
+        return NextResponse.json(
+          { allowed: false, error: 'Unable to start trip. Please try again.' },
+          { status: 503 }
+        );
+      }
 
       return NextResponse.json({
-        success,
-        message: success ? 'Free trip started' : 'Failed to record trip',
+        allowed: true,
+        status: reservation.status,
+        activeTrip: {
+          sessionId: reservation.record?.activeSessionId || sessionId,
+          startedAt: reservation.record?.startedAt,
+        },
+      });
+    }
+
+    if (action === 'complete' || action === 'use') {
+      const completion = await completeTouristTrip(deviceFingerprint, ipHash, sessionId);
+
+      if (!completion.ok) {
+        return NextResponse.json(
+          { success: false, error: completion.reason || 'Unable to complete trip' },
+          { status: completion.reason === 'session_mismatch' ? 409 : 503 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: completion.alreadyCompleted ? 'Trip already completed' : 'Trip completed',
       });
     }
 
     return NextResponse.json(
-      { error: 'Invalid action. Use "check" or "use".' },
+      { error: 'Invalid action. Use "check", "start", or "complete".' },
       { status: 400 }
     );
   } catch (err) {
