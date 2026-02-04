@@ -32,18 +32,6 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
   return null;
 }
 
-// Leaflet calls L.DomEvent.disableScrollPropagation on its container,
-// which blocks wheel/trackpad events from reaching the page scroll container.
-// Since scrollWheelZoom is disabled, undo this so the page scrolls normally.
-function EnablePageScroll() {
-  const map = useMap();
-  useEffect(() => {
-    const container = map.getContainer();
-    L.DomEvent.off(container, 'wheel', L.DomEvent.stopPropagation);
-  }, [map]);
-  return null;
-}
-
 // Component to fly to selected location
 function FlyToLocation({ location }: { location: LocationResult | null }) {
   const map = useMap();
@@ -75,7 +63,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ selectedLocation, onMapClic
         style={{ height: 'clamp(250px, 35vw, 450px)', width: '100%' }}
         className="z-0"
         worldCopyJump={true}
-        scrollWheelZoom={false}
+        scrollWheelZoom={true}
       >
         {/* Using a kid-friendly, colorful map style */}
         <TileLayer
@@ -85,7 +73,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ selectedLocation, onMapClic
 
         <MapClickHandler onMapClick={onMapClick} />
         <FlyToLocation location={selectedLocation} />
-        <EnablePageScroll />
 
         {selectedLocation && (
           <Marker
