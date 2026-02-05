@@ -12,6 +12,103 @@ export interface LocationResult {
   state?: string;
 }
 
+const PLACE_TYPES = new Set([
+  'city',
+  'town',
+  'village',
+  'hamlet',
+  'municipality',
+  'county',
+  'state',
+  'province',
+  'region',
+  'country',
+  'island',
+]);
+
+const normalizeText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const getPrimaryName = (
+  address: NominatimResponse[number]['address'] | undefined,
+  fallback: string
+) =>
+  address?.city ||
+  address?.town ||
+  address?.village ||
+  address?.hamlet ||
+  address?.municipality ||
+  address?.county ||
+  address?.island ||
+  address?.state ||
+  address?.country ||
+  fallback;
+
+const shouldKeepResult = (result: NominatimResponse[number]) => {
+  const address = result.address ?? {};
+  const placeType = result.addresstype ?? result.type ?? '';
+
+  if (PLACE_TYPES.has(placeType)) return true;
+
+  return Boolean(
+    address.city ||
+      address.town ||
+      address.village ||
+      address.hamlet ||
+      address.municipality ||
+      address.county ||
+      address.island ||
+      address.state ||
+      address.country
+  );
+};
+
+const rankResults = (data: NominatimResponse, query: string) => {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return data.filter(shouldKeepResult);
+
+  const seen = new Set<string>();
+
+  return data
+    .filter(shouldKeepResult)
+    .map((result) => {
+      const primaryName = getPrimaryName(
+        result.address,
+        result.name || result.display_name
+      );
+      const normalizedPrimary = normalizeText(primaryName);
+      const normalizedDisplay = normalizeText(result.display_name);
+      let score = 0;
+
+      if (normalizedPrimary === normalizedQuery) score += 1000;
+      else if (normalizedDisplay.startsWith(normalizedQuery)) score += 800;
+      else if (normalizedPrimary.startsWith(normalizedQuery)) score += 700;
+      else if (normalizedDisplay.includes(` ${normalizedQuery} `)) score += 300;
+      else if (normalizedDisplay.includes(normalizedQuery)) score += 200;
+
+      if (typeof result.importance === 'number') {
+        score += result.importance * 100;
+      }
+
+      score -= Math.min(normalizedPrimary.length, 40);
+
+      return { result, score, primaryName };
+    })
+    .sort((a, b) => b.score - a.score)
+    .filter(({ result, primaryName }) => {
+      const key = `${result.lat}-${result.lon}-${primaryName}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(({ result }) => result);
+};
+
 /**
  * Reverse geocode: get location details from coordinates
  */
@@ -59,6 +156,7 @@ export const reverseGeocode = async (
       address.hamlet ||
       address.municipality ||
       address.county ||
+      address.island ||
       '';
 
     const countryName = address.country ?? '';
@@ -84,6 +182,11 @@ type NominatimResponse = Array<{
   lat: string;
   lon: string;
   display_name: string;
+  name?: string;
+  class?: string;
+  type?: string;
+  addresstype?: string;
+  importance?: number;
   address?: {
     city?: string;
     town?: string;
@@ -94,6 +197,7 @@ type NominatimResponse = Array<{
     state?: string;
     country?: string;
     country_code?: string;
+    island?: string;
   };
 }>;
 
@@ -111,11 +215,12 @@ export const searchLocationSuggestions = async (
   const trimmed = query.trim();
   if (!trimmed || trimmed.length < 2) return [];
 
+  const expandedLimit = Math.min(Math.max(limit * 3, 12), 20);
   const params = new URLSearchParams({
     q: trimmed,
     format: 'jsonv2',
     addressdetails: '1',
-    limit: String(limit),
+    limit: String(expandedLimit),
     'accept-language': 'en',
   });
 
@@ -143,16 +248,14 @@ export const searchLocationSuggestions = async (
 
     const data = (await response.json()) as NominatimResponse;
 
-    return data.map((result) => {
+    const rankedResults = rankResults(data, trimmed).slice(0, limit);
+
+    return rankedResults.map((result) => {
       const address = result.address ?? {};
-      const city =
-        address.city ||
-        address.town ||
-        address.village ||
-        address.hamlet ||
-        address.municipality ||
-        address.county ||
-        trimmed;
+      const city = getPrimaryName(
+        address,
+        result.name || result.display_name || trimmed
+      );
 
       const countryName = address.country ?? '';
       const countryCode = address.country_code
@@ -184,7 +287,7 @@ export const searchLocationOSM = async (
     q: trimmed,
     format: 'jsonv2',
     addressdetails: '1',
-    limit: '1',
+    limit: '10',
     'accept-language': 'en',
   });
 
@@ -211,22 +314,17 @@ export const searchLocationOSM = async (
     }
 
     const data = (await response.json()) as NominatimResponse;
-    const result = data?.[0];
+    const [result] = rankResults(data, trimmed);
 
     if (!result) {
       return null;
     }
 
     const address = result.address ?? {};
-    const city =
-      address.city ||
-      address.town ||
-      address.village ||
-      address.hamlet ||
-      address.municipality ||
-      address.county ||
-      result.display_name ||
-      trimmed;
+    const city = getPrimaryName(
+      address,
+      result.name || result.display_name || trimmed
+    );
 
     const countryName = address.country ?? '';
     const countryCode = address.country_code
@@ -246,5 +344,4 @@ export const searchLocationOSM = async (
     return null;
   }
 };
-
 

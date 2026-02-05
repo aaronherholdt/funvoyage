@@ -54,6 +54,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [funFact, setFunFact] = useState('');
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchRequestIdRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Get a random fun fact
@@ -73,21 +74,29 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
     }
 
     if (query.length < 2) {
+      searchRequestIdRef.current += 1;
+      setIsSearching(false);
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
+    const requestId = ++searchRequestIdRef.current;
     setIsSearching(true);
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const results = await searchLocationSuggestions(query, 6);
+        if (searchRequestIdRef.current !== requestId) return;
         setSuggestions(results);
         setShowSuggestions(results.length > 0);
       } catch {
+        if (searchRequestIdRef.current !== requestId) return;
         setSuggestions([]);
+        setShowSuggestions(false);
       } finally {
-        setIsSearching(false);
+        if (searchRequestIdRef.current === requestId) {
+          setIsSearching(false);
+        }
       }
     }, 300);
 

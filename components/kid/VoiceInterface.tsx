@@ -114,7 +114,7 @@ export const VoiceInterface: React.FC<VoiceInterfaceProps> = ({
         {/* Live Transcript Bubble */}
         {isListening && (
           <div className="flex justify-center w-full my-4">
-            <div className="glass-dark text-white px-6 py-3 rounded-full animate-pulse shadow-lg max-w-[90%] text-center">
+            <div className="glass text-sand-900 px-6 py-3 rounded-full animate-pulse shadow-lg max-w-[90%] text-center">
               <p className={`font-medium ${theme.font === 'font-kid' ? 'text-xl' : 'text-base'}`}>{transcript || "Listening..."}</p>
             </div>
           </div>
