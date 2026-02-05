@@ -15,7 +15,7 @@ const MapComponent = dynamic(() => import('./MapComponent'), {
 });
 
 interface LocationPickerProps {
-  onLocationSelect: (countryCode: string, city: string, countryName: string) => void;
+  onLocationSelect: (countryCode: string, city: string, countryName: string) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -136,7 +136,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
 
     try {
       if (selectedLocation) {
-        onLocationSelect(
+        await onLocationSelect(
           selectedLocation.countryCode || 'XX',
           selectedLocation.city || query.trim(),
           selectedLocation.countryName || 'Unknown country'
@@ -146,7 +146,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
         const results = await searchLocationSuggestions(query.trim(), 1);
         if (results.length > 0) {
           const loc = results[0];
-          onLocationSelect(
+          await onLocationSelect(
             loc.countryCode || 'XX',
             loc.city || query.trim(),
             loc.countryName || 'Unknown country'

@@ -4,12 +4,16 @@ import { getDeviceFingerprint } from '../lib/deviceFingerprint';
 
 interface TripLimitStatus {
   allowed: boolean;
-  reason?: 'limit' | 'unverified';
+  reason?: 'limit' | 'unverified' | 'active_trip';
   currentUsage?: number;
   limit?: number;
   period?: string;
   remainingTrips?: number;
   message: string;
+  activeTrip?: {
+    sessionId?: string | null;
+    startedAt?: string | null;
+  };
   upgrade?: {
     suggestedTier: UserTier;
     message: string;
@@ -18,7 +22,7 @@ interface TripLimitStatus {
 
 interface UseTripLimitsReturn {
   checkTripLimit: (isAuthenticated: boolean) => Promise<TripLimitStatus>;
-  recordTripComplete: (isAuthenticated: boolean) => Promise<boolean>;
+  recordTripComplete: (isAuthenticated: boolean, sessionId?: string) => Promise<boolean>;
   isChecking: boolean;
 }
 
@@ -61,11 +65,13 @@ export function useTripLimits(): UseTripLimitsReturn {
         const data = await res.json();
 
         if (!data.allowed) {
+          const isActiveTrip = data.reason === 'active_trip';
           return {
             allowed: false,
-            reason: 'limit',
+            reason: isActiveTrip ? 'active_trip' : 'limit',
             message: data.message || "You've used your free trip",
-            upgrade: {
+            activeTrip: data.activeTrip || undefined,
+            upgrade: isActiveTrip ? undefined : {
               suggestedTier: UserTier.STARTER,
               message: "You've already enjoyed your free trip! Create an account to continue exploring the world with your kids.",
             },
@@ -86,7 +92,7 @@ export function useTripLimits(): UseTripLimitsReturn {
     }
   }, []);
 
-  const recordTripComplete = useCallback(async (isAuthenticated: boolean): Promise<boolean> => {
+  const recordTripComplete = useCallback(async (isAuthenticated: boolean, sessionId?: string): Promise<boolean> => {
     try {
       const fingerprint = await getDeviceFingerprint();
 
@@ -105,7 +111,8 @@ export function useTripLimits(): UseTripLimitsReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             deviceFingerprint: fingerprint,
-            action: 'use',
+            action: 'complete',
+            sessionId,
           }),
         });
 

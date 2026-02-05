@@ -29,7 +29,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
         <script src="https://accounts.google.com/gsi/client" async defer />
       </head>
-      <body className="antialiased overscroll-none">
+      <body className="antialiased">
         <PwaInstallPrompt />
         {children}
       </body>

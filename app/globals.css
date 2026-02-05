@@ -319,8 +319,19 @@ html {
 
 /* Prevent iOS Safari rubber-band overscroll on full-screen views */
 body {
-  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
+}
+
+@media (pointer: coarse) {
+  body {
+    overscroll-behavior: none;
+  }
+}
+
+@media (pointer: fine) {
+  body {
+    overscroll-behavior: auto;
+  }
 }
 
 /* iOS input zoom prevention: inputs < 16px cause Safari to zoom.
@@ -422,6 +433,12 @@ a, button, [role="button"] {
 /* Prevent pull-to-refresh interfering with scroll containers */
 .overscroll-contain {
   overscroll-behavior: contain;
+}
+
+@media (pointer: fine) {
+  .overscroll-contain {
+    overscroll-behavior: auto;
+  }
 }
 
 /* ========================================

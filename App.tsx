@@ -6,6 +6,7 @@ import { TIER_LIMITS, TIER_CHILD_LIMITS, APP_NAME, STAGE_PROMPTS, BADGES, getFla
 import { generateNiaResponse, analyzeSession, AiRateLimitError, AI_RATE_LIMIT } from './services/geminiService';
 import { supabase } from './src/lib/supabaseClient';
 import { useAuthSession } from './src/hooks/useAuthSession';
+import { getDeviceFingerprint } from './lib/deviceFingerprint';
 import { VoiceInterface } from './components/kid/VoiceInterface';
 import { LocationPicker } from './components/kid/LocationPicker';
 import { JournalStep } from './components/kid/JournalStep';
@@ -67,6 +68,19 @@ interface SpeechRecognition extends EventTarget {
 type AppView = 'landing' | 'auth' | 'onboarding' | 'dashboard' | 'passport' | 'add_trip' | 'journaling' | 'problem_spotting' | 'session' | 'completion' | 'upgrade' | 'memory_detail';
 
 const POST_AUTH_VIEW_KEY = 'funvoyage_post_auth_view';
+const GUEST_TRIP_STORAGE_KEY = 'funvoyage_guest_trip';
+const GUEST_TRIP_PROGRESS_VIEWS: AppView[] = ['journaling', 'problem_spotting', 'session'];
+
+type GuestTripDraft = {
+  sessionId: string;
+  activeKidId: string | null;
+  activeSession: Partial<Session>;
+  journalEntry: string;
+  identifiedProblems: string[];
+  history: SessionEntry[];
+  stage: ConversationStage;
+  view: AppView;
+};
 const APP_VIEWS: AppView[] = [
   'landing',
   'auth',
@@ -169,6 +183,37 @@ const App: React.FC = () => {
   const setPostAuthViewPersisted = (value: AppView | null) => {
     setPostAuthView(value);
     persistPostAuthView(value);
+  };
+
+  const readGuestTripDraft = (): GuestTripDraft | null => {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(GUEST_TRIP_STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as GuestTripDraft;
+      if (!parsed?.sessionId || !parsed.activeSession) return null;
+      return parsed;
+    } catch (err) {
+      console.warn('Failed to read guest trip draft', err);
+      return null;
+    }
+  };
+
+  const writeGuestTripDraft = (draft: GuestTripDraft | null) => {
+    if (typeof window === 'undefined') return;
+    if (!draft) {
+      localStorage.removeItem(GUEST_TRIP_STORAGE_KEY);
+      return;
+    }
+    try {
+      localStorage.setItem(GUEST_TRIP_STORAGE_KEY, JSON.stringify(draft));
+    } catch (err) {
+      console.warn('Failed to persist guest trip draft', err);
+    }
+  };
+
+  const clearGuestTripDraft = () => {
+    writeGuestTripDraft(null);
   };
 
   // --- REFS ---
@@ -320,6 +365,50 @@ const App: React.FC = () => {
     return Array.from(kidMap.values());
   };
 
+  const resumeGuestTrip = (draft: GuestTripDraft) => {
+    const nextView = GUEST_TRIP_PROGRESS_VIEWS.includes(draft.view) ? draft.view : 'journaling';
+    setActiveKidId(draft.activeKidId || user?.kids?.[0]?.id || null);
+    setActiveSession(draft.activeSession);
+    setJournalEntry(draft.journalEntry || '');
+    setIdentifiedProblems(draft.identifiedProblems || []);
+    setHistory(draft.history || []);
+    setStage(draft.stage || 'intro');
+    setSessionAnalysis(null);
+    setNewBadges([]);
+    setIsAnalyzing(false);
+    setAiRateLimitMessage(null);
+    setAiRateLimitUntil(null);
+    aiCallTimestampsRef.current = [];
+    setView(nextView);
+  };
+
+  const attemptResumeActiveGuestTrip = (activeSessionId?: string | null) => {
+    const draft = readGuestTripDraft();
+    if (!draft) return false;
+    if (activeSessionId && draft.sessionId !== activeSessionId) return false;
+    resumeGuestTrip(draft);
+    return true;
+  };
+
+  const reserveGuestTrip = async (sessionId: string) => {
+    try {
+      const fingerprint = await getDeviceFingerprint();
+      const res = await fetch('/api/tourist/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceFingerprint: fingerprint,
+          action: 'start',
+          sessionId,
+        }),
+      });
+      return res.ok ? res.json() : null;
+    } catch (err) {
+      console.warn('Failed to reserve guest trip', err);
+      return null;
+    }
+  };
+
   // --- OAUTH CALLBACK GUARD ---
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -385,6 +474,23 @@ const App: React.FC = () => {
     }
     localStorage.removeItem('funvoyage_activeKid');
   }, [activeKidId, hasHydratedUser, user]);
+
+  useEffect(() => {
+    if (!hasHydratedUser || !user || user.email) return;
+    if (!activeSession || !GUEST_TRIP_PROGRESS_VIEWS.includes(view)) return;
+    if (!activeSession.id) return;
+    const draft: GuestTripDraft = {
+      sessionId: activeSession.id,
+      activeKidId,
+      activeSession,
+      journalEntry,
+      identifiedProblems,
+      history,
+      stage,
+      view,
+    };
+    writeGuestTripDraft(draft);
+  }, [activeSession, activeKidId, hasHydratedUser, user, journalEntry, identifiedProblems, history, stage, view]);
 
   useEffect(() => {
     if (!aiRateLimitUntil) return;
@@ -856,6 +962,16 @@ const App: React.FC = () => {
     const limitStatus = await checkTripLimit(isAuthenticated);
 
     if (!limitStatus.allowed) {
+      if (!isAuthenticated && limitStatus.reason === 'active_trip') {
+        const resumed = attemptResumeActiveGuestTrip(limitStatus.activeTrip?.sessionId);
+        if (resumed) return;
+        const message = limitStatus.message || 'You already have a trip in progress. Resume it to continue.';
+        setTripLimitError(message);
+        if (typeof window !== 'undefined') {
+          window.alert(message);
+        }
+        return;
+      }
       if (limitStatus.reason === 'unverified') {
         setTripLimitError(limitStatus.message || 'Unable to verify limits. Please try again.');
         return;
@@ -868,6 +984,10 @@ const App: React.FC = () => {
         setView('upgrade');
       }
       return;
+    }
+
+    if (!isAuthenticated) {
+      clearGuestTripDraft();
     }
 
     // If multiple kids, show selector first
@@ -885,11 +1005,31 @@ const App: React.FC = () => {
     setView('add_trip');
   };
 
-  const handleLocationSelected = (countryCode: string, city: string, countryName: string) => {
+  const handleLocationSelected = async (countryCode: string, city: string, countryName: string) => {
+    if (!user) return;
+    setTripLimitError(null);
     const finalCountryName = countryName || countryCode || 'Unknown location';
+    const sessionId = Date.now().toString();
+
+    if (!user.email) {
+      const reservation = await reserveGuestTrip(sessionId);
+      if (!reservation || reservation.allowed === false) {
+        const reason = reservation?.reason;
+        if (reason === 'active_trip') {
+          const resumed = attemptResumeActiveGuestTrip(reservation.activeTrip?.sessionId);
+          if (resumed) return;
+        }
+        const message = reservation?.message || 'Unable to start trip. Please try again.';
+        setTripLimitError(message);
+        if (typeof window !== 'undefined') {
+          window.alert(message);
+        }
+        return;
+      }
+    }
 
     const newSession: Partial<Session> = {
-      id: Date.now().toString(),
+      id: sessionId,
       countryCode,
       countryName: finalCountryName,
       city: city,
@@ -1176,7 +1316,10 @@ const App: React.FC = () => {
 
     // Record trip completion for usage tracking
     const isAuthenticated = !!user?.email;
-    await recordTripComplete(isAuthenticated);
+    await recordTripComplete(isAuthenticated, activeSession?.id);
+    if (!isAuthenticated) {
+      clearGuestTripDraft();
+    }
 
     setIsAnalyzing(false);
     speak(analysis.summary);
