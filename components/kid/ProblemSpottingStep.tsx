@@ -7,7 +7,7 @@ interface ProblemSpottingStepProps {
     city: string;
     countryName: string;
     age: number;
-    onComplete: (problems: string[]) => void;
+    onComplete: (problems: string[]) => void | Promise<void>;
     onBack: () => void;
 }
 
