@@ -142,6 +142,8 @@ const App: React.FC = () => {
   const [sessionAnalysis, setSessionAnalysis] = useState<SessionAnalysis | null>(null);
   const [newBadges, setNewBadges] = useState<Badge[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisRetryingSessionId, setAnalysisRetryingSessionId] = useState<string | null>(null);
+  const [analysisRetryError, setAnalysisRetryError] = useState<string | null>(null);
 
   // --- MEMORY DETAIL STATE ---
   const [viewingSession, setViewingSession] = useState<Session | null>(null);
@@ -365,6 +367,151 @@ const App: React.FC = () => {
     return Array.from(kidMap.values());
   };
 
+  const updateActiveKid = async (updater: (kid: KidProfile) => KidProfile) => {
+    if (!activeKidId) return;
+    let nextKids: KidProfile[] | null = null;
+    setUser(prev => {
+      if (!prev) return prev;
+      nextKids = prev.kids.map(kid => (kid.id === activeKidId ? updater(kid) : kid));
+      return { ...prev, kids: nextKids };
+    });
+    if (nextKids && supabaseSession?.user?.id) {
+      await syncKidsToSupabase(supabaseSession.user.id, nextKids);
+    }
+  };
+
+  const updateKidById = async (kidId: string, updater: (kid: KidProfile) => KidProfile) => {
+    if (!user) return;
+    let nextKids: KidProfile[] | null = null;
+    setUser(prev => {
+      if (!prev) return prev;
+      nextKids = prev.kids.map(kid => (kid.id === kidId ? updater(kid) : kid));
+      return { ...prev, kids: nextKids };
+    });
+    if (nextKids && supabaseSession?.user?.id) {
+      await syncKidsToSupabase(supabaseSession.user.id, nextKids);
+    }
+  };
+
+  const findKidBySessionId = (sessionId: string) => {
+    if (!user) return null;
+    return user.kids.find(kid => kid.sessions.some(session => session.id === sessionId)) || null;
+  };
+
+  const upsertSessionForActiveKid = async (session: Session) => {
+    await updateActiveKid(kid => {
+      const existingIndex = kid.sessions.findIndex(s => s.id === session.id);
+      if (existingIndex === -1) {
+        return { ...kid, sessions: [session, ...kid.sessions] };
+      }
+      const sessions = kid.sessions.map(s => (s.id === session.id ? { ...s, ...session } : s));
+      return { ...kid, sessions };
+    });
+  };
+
+  const patchSessionForActiveKid = async (sessionId: string, patch: Partial<Session>) => {
+    await updateActiveKid(kid => {
+      const exists = kid.sessions.some(s => s.id === sessionId);
+      if (!exists) {
+        return kid;
+      }
+      const sessions = kid.sessions.map(s => (s.id === sessionId ? { ...s, ...patch } : s));
+      return { ...kid, sessions };
+    });
+  };
+
+  const retrySessionAnalysis = async (session: Session) => {
+    if (!user) return;
+    if (!session.entries || session.entries.length === 0) {
+      setAnalysisRetryError('No transcript available to analyze yet.');
+      return;
+    }
+    if (!canInvokeAi()) return;
+
+    setAnalysisRetryError(null);
+    setAnalysisRetryingSessionId(session.id);
+
+    const kid = findKidBySessionId(session.id) || user.kids.find(k => k.id === activeKidId) || user.kids[0];
+    const kidAge = kid?.age || 8;
+    const isPaidTier = user.tier === UserTier.PRO || user.tier === UserTier.ADVENTURER;
+
+    let analysis: SessionAnalysis | null = null;
+    try {
+      analysis = await analyzeSession(
+        session.entries,
+        session.countryName || '',
+        session.city,
+        kidAge,
+        aiSessionIdRef.current
+      );
+    } catch (err) {
+      if (err instanceof AiRateLimitError) {
+        const waitMs = err.retryAfterMs || AI_RATE_LIMIT.windowMs;
+        setAnalysisRetryError(`Nia needs a quick breather. Try again in ${Math.ceil(waitMs / 1000)}s.`);
+      } else {
+        setAnalysisRetryError('Could not analyze this trip. Please try again.');
+      }
+      setAnalysisRetryingSessionId(null);
+      return;
+    }
+
+    if (!analysis) {
+      setAnalysisRetryError('Could not analyze this trip. Please try again.');
+      setAnalysisRetryingSessionId(null);
+      return;
+    }
+
+    const newPoints = {
+      curiosity: (kid?.totalPoints.curiosity || 0) + analysis.points.curiosity,
+      empathy: (kid?.totalPoints.empathy || 0) + analysis.points.empathy,
+      resilience: (kid?.totalPoints.resilience || 0) + analysis.points.resilience,
+      problem_solving: (kid?.totalPoints.problem_solving || 0) + analysis.points.problem_solving,
+    };
+
+    const newlyUnlockedBadges: Badge[] = [];
+    if (isPaidTier && kid) {
+      BADGES.forEach(badge => {
+        const hasBadge = kid.badges.some(b => b.id === badge.id);
+        if (!hasBadge) {
+          const score = newPoints[badge.category];
+          if (score >= badge.threshold) {
+            newlyUnlockedBadges.push(badge);
+          }
+        }
+      });
+    }
+
+    const updatedSession: Session = {
+      ...session,
+      analysis,
+      analysisStatus: 'complete',
+      completed: true,
+      earnedBadges: newlyUnlockedBadges,
+    };
+
+    if (kid) {
+      await updateKidById(kid.id, k => {
+        const sessions = k.sessions.map(s => (s.id === updatedSession.id ? { ...s, ...updatedSession } : s));
+        return {
+          ...k,
+          sessions,
+          totalPoints: isPaidTier ? newPoints : k.totalPoints,
+          badges: isPaidTier ? [...k.badges, ...newlyUnlockedBadges] : k.badges,
+        };
+      });
+    }
+
+    setViewingSession(updatedSession);
+
+    const isAuthenticated = !!user?.email;
+    await recordTripComplete(isAuthenticated, session.id);
+    if (!isAuthenticated) {
+      clearGuestTripDraft();
+    }
+
+    setAnalysisRetryingSessionId(null);
+  };
+
   const resumeGuestTrip = (draft: GuestTripDraft) => {
     const nextView = GUEST_TRIP_PROGRESS_VIEWS.includes(draft.view) ? draft.view : 'journaling';
     setActiveKidId(draft.activeKidId || user?.kids?.[0]?.id || null);
@@ -506,6 +653,11 @@ const App: React.FC = () => {
     }, remaining);
     return () => clearTimeout(timeout);
   }, [aiRateLimitUntil]);
+
+  useEffect(() => {
+    setAnalysisRetryError(null);
+    setAnalysisRetryingSessionId(null);
+  }, [viewingSession?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -942,11 +1094,18 @@ const App: React.FC = () => {
 
   const requireAuthForPassport = (kidId?: string) => {
     if (kidId) setActiveKidId(kidId);
-    if (user?.email) {
+    if (user?.email || user?.tier === UserTier.GUEST) {
       setPostAuthViewPersisted(null);
       setView('passport');
       return;
     }
+    setAuthMode('signup');
+    setAuthError('');
+    setPostAuthViewPersisted('passport');
+    setView('auth');
+  };
+
+  const promptSignupForPassport = () => {
     setAuthMode('signup');
     setAuthError('');
     setPostAuthViewPersisted('passport');
@@ -1006,7 +1165,7 @@ const App: React.FC = () => {
   };
 
   const handleLocationSelected = async (countryCode: string, city: string, countryName: string) => {
-    if (!user) return;
+    if (!user || !activeKidId) return;
     setTripLimitError(null);
     const finalCountryName = countryName || countryCode || 'Unknown location';
     const sessionId = Date.now().toString();
@@ -1028,7 +1187,7 @@ const App: React.FC = () => {
       }
     }
 
-    const newSession: Partial<Session> = {
+    const newSession: Session = {
       id: sessionId,
       countryCode,
       countryName: finalCountryName,
@@ -1039,21 +1198,28 @@ const App: React.FC = () => {
       identifiedProblems: [],
       completed: false
     };
+    await upsertSessionForActiveKid(newSession);
     setActiveSession(newSession);
     setJournalEntry('');
     setIdentifiedProblems([]);
     setView('journaling');
   };
 
-  const handleJournalComplete = (entry: string) => {
+  const handleJournalComplete = async (entry: string) => {
     setJournalEntry(entry);
     setActiveSession(prev => ({ ...prev, journalEntry: entry }));
+    if (activeSession?.id) {
+      await patchSessionForActiveKid(activeSession.id, { journalEntry: entry });
+    }
     setView('problem_spotting');
   };
 
-  const handleProblemsComplete = (problems: string[]) => {
+  const handleProblemsComplete = async (problems: string[]) => {
     setIdentifiedProblems(problems);
     setActiveSession(prev => ({ ...prev, identifiedProblems: problems }));
+    if (activeSession?.id) {
+      await patchSessionForActiveKid(activeSession.id, { identifiedProblems: problems });
+    }
     setHistory([]);
     setStage('intro');
     setAiRateLimitMessage(null);
@@ -1215,6 +1381,15 @@ const App: React.FC = () => {
   };
 
   const handleFinishAndAnalyze = async (finalHistory: SessionEntry[]) => {
+    if (activeSession?.id) {
+      await patchSessionForActiveKid(activeSession.id, {
+        entries: finalHistory,
+        journalEntry,
+        identifiedProblems,
+      });
+      setActiveSession(prev => ({ ...prev, entries: finalHistory }));
+    }
+
     if (!canInvokeAi()) return;
 
     setView('completion');
@@ -1240,6 +1415,11 @@ const App: React.FC = () => {
         return;
       }
       console.error('Nia analyze error:', err);
+      if (activeSession?.id) {
+        await patchSessionForActiveKid(activeSession.id, {
+          analysisStatus: 'pending',
+        });
+      }
       setIsAnalyzing(false);
       if (user?.email) {
         setView('passport');
@@ -1250,6 +1430,11 @@ const App: React.FC = () => {
     }
 
     if (!analysis) {
+      if (activeSession?.id) {
+        await patchSessionForActiveKid(activeSession.id, {
+          analysisStatus: 'pending',
+        });
+      }
       setIsAnalyzing(false);
       if (user?.email) {
         setView('passport');
@@ -1288,31 +1473,24 @@ const App: React.FC = () => {
       ...(activeSession as Session),
       entries: finalHistory,
       analysis: analysis,
+      analysisStatus: 'complete',
       completed: true,
       earnedBadges: newlyUnlockedBadges
     };
-
-    const updatedKids = user!.kids.map(k => {
-      if (k.id === activeKidId) {
-        return {
-          ...k,
-          sessions: [completedSession, ...k.sessions],
-          totalPoints: (user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER) ? newPoints : k.totalPoints,
-          badges: [...k.badges, ...newlyUnlockedBadges]
-        };
-      }
-      return k;
+    await updateActiveKid(k => {
+      const existingIndex = k.sessions.findIndex(s => s.id === completedSession.id);
+      const sessions = existingIndex === -1
+        ? [completedSession, ...k.sessions]
+        : k.sessions.map(s => (s.id === completedSession.id ? { ...s, ...completedSession } : s));
+      return {
+        ...k,
+        sessions,
+        totalPoints: (user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER) ? newPoints : k.totalPoints,
+        badges: (user!.tier === UserTier.PRO || user!.tier === UserTier.ADVENTURER)
+          ? [...k.badges, ...newlyUnlockedBadges]
+          : k.badges,
+      };
     });
-
-    setUser(prev => {
-      if (!prev) return null;
-      return { ...prev, kids: updatedKids };
-    });
-
-    // Sync to Supabase if user is authenticated
-    if (supabaseSession?.user?.id) {
-      await syncKidsToSupabase(supabaseSession.user.id, updatedKids);
-    }
 
     // Record trip completion for usage tracking
     const isAuthenticated = !!user?.email;
@@ -1574,6 +1752,7 @@ const App: React.FC = () => {
     const kid = user?.kids.find(k => k.id === activeKidId);
     const sessions = kid?.sessions || [];
     const totalPages = sessions.length + 1; // Sessions + Add Trip Page
+    const isGuestUser = !user?.email;
 
     const goToPage = (index: number) => {
       if (index >= 0 && index < totalPages) {
@@ -1605,6 +1784,20 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        {isGuestUser && (
+          <div className="mx-4 mt-4 mb-1 rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-emerald-900 text-sm shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p className="font-semibold">Save this trip forever.</p>
+                <p className="text-emerald-800 text-xs">Create your free passport to keep your report, stamps, and future trips.</p>
+              </div>
+              <Button size="sm" variant="primary" onClick={promptSignupForPassport}>
+                Create free passport
+              </Button>
+            </div>
+          </div>
+        )}
+
         {tripLimitError && (
           <div className="mx-4 mt-3 mb-1 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-sm">
             <AlertTriangle size={16} className="mt-0.5 text-amber-500" />
@@ -1634,7 +1827,10 @@ const App: React.FC = () => {
                 style={{ width: `${totalPages * 100}%`, transform: `translateX(-${passportPage * (100 / totalPages)}%)` }}
               >
                 {/* Render Session Pages */}
-                {sessions.map((session, index) => (
+                {sessions.map((session) => {
+                  const isGuestUser = !user?.email;
+                  const isAnalysisComplete = session.analysisStatus === 'complete' || !!session.analysis;
+                  return (
                   <div key={session.id} className="h-full p-2" style={{ width: `${100 / totalPages}%` }}>
                     <div className="w-full h-full bg-[#fffdf5] rounded-[20px] shadow-2xl overflow-hidden relative flex flex-col border-r-4 border-b-4 border-orange-100/50">
                       {/* Paper Texture */}
@@ -1642,11 +1838,15 @@ const App: React.FC = () => {
 
                       {/* Header Stamp */}
                       <div className="p-6 border-b border-dashed border-slate-300 flex justify-between items-start relative">
-                        <div className="absolute top-4 right-4 w-20 h-20 rounded-full border-4 border-red-800/30 flex items-center justify-center rotate-12 opacity-40 pointer-events-none">
-                          <div className="w-16 h-16 rounded-full border border-red-800/30"></div>
-                        </div>
+                        {isAnalysisComplete && (
+                          <div className="absolute top-4 right-4 w-20 h-20 rounded-full border-4 border-red-800/30 flex items-center justify-center rotate-12 opacity-40 pointer-events-none">
+                            <div className="w-16 h-16 rounded-full border border-red-800/30"></div>
+                          </div>
+                        )}
                         <div>
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1">Entry Visa</div>
+                          <div className={`text-[10px] font-bold uppercase tracking-[0.2em] mb-1 ${isAnalysisComplete ? 'text-slate-400' : 'text-amber-500'}`}>
+                            {isAnalysisComplete ? 'Entry Visa' : 'Visa Pending'}
+                          </div>
                           <h2 className="text-2xl font-serif font-bold text-slate-800">{session.countryName.toUpperCase()}</h2>
                           <p className="text-slate-500 font-mono text-xs">{session.city?.toUpperCase()}</p>
                         </div>
@@ -1656,11 +1856,19 @@ const App: React.FC = () => {
                       </div>
 
                       {/* Date Stamp */}
-                      <div className="absolute top-24 right-6 transform rotate-[-12deg] opacity-80">
-                        <div className="border-2 border-indigo-600 text-indigo-600 px-2 py-1 font-mono text-xs font-bold rounded uppercase shadow-sm">
-                          {new Date(session.date).toLocaleDateString()}
+                      {isAnalysisComplete ? (
+                        <div className="absolute top-24 right-6 transform rotate-[-12deg] opacity-80">
+                          <div className="border-2 border-indigo-600 text-indigo-600 px-2 py-1 font-mono text-xs font-bold rounded uppercase shadow-sm">
+                            {new Date(session.date).toLocaleDateString()}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="absolute top-24 right-6 transform rotate-[-12deg] opacity-80">
+                          <div className="border-2 border-amber-400 text-amber-700 bg-amber-50/80 px-2 py-1 font-mono text-xs font-bold rounded uppercase shadow-sm">
+                            Pending
+                          </div>
+                        </div>
+                      )}
 
                       {/* Main Visual */}
                       <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
@@ -1671,31 +1879,32 @@ const App: React.FC = () => {
                         {/* Insight Text - "Handwritten" */}
                         <div className="mt-6 w-full">
                           <p className="font-kid text-slate-600 text-center text-lg leading-tight">
-                            "{session.analysis?.keyInsight || 'An amazing journey!'}"
+                            "{isAnalysisComplete ? (session.analysis?.keyInsight || 'An amazing journey!') : 'Analysis pending - retry to stamp your visa.'}"
                           </p>
                         </div>
                       </div>
 
-                      {/* Badges Footer */}
-                      <div className="bg-orange-50/50 p-4 border-t border-orange-100">
-                        <h4 className="text-[10px] font-bold text-orange-800/60 uppercase tracking-wider mb-2 text-center">Achievements</h4>
-                        <div className="flex flex-wrap justify-center gap-2 min-h-[60px]">
-                          {session.earnedBadges?.map((b, i) => (
-                            <div key={i} className="relative group cursor-help">
-                              <div className="w-10 h-10 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-xl transform hover:scale-110 transition-transform">
-                                {b.icon}
+                      {!isGuestUser && (
+                        <div className="bg-orange-50/50 p-4 border-t border-orange-100">
+                          <h4 className="text-[10px] font-bold text-orange-800/60 uppercase tracking-wider mb-2 text-center">Achievements</h4>
+                          <div className="flex flex-wrap justify-center gap-2 min-h-[60px]">
+                            {session.earnedBadges?.map((b, i) => (
+                              <div key={i} className="relative group cursor-help">
+                                <div className="w-10 h-10 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-xl transform hover:scale-110 transition-transform">
+                                  {b.icon}
+                                </div>
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
+                                  {b.name}
+                                </div>
                               </div>
-                              {/* Tooltip */}
-                              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
-                                {b.name}
-                              </div>
-                            </div>
-                          ))}
-                          {(!session.earnedBadges || session.earnedBadges.length === 0) && (
-                            <span className="text-xs text-slate-400 italic">No badges collected yet.</span>
-                          )}
+                            ))}
+                            {(!session.earnedBadges || session.earnedBadges.length === 0) && (
+                              <span className="text-xs text-slate-400 italic">No badges collected yet.</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="p-2 bg-white border-t border-slate-100">
                         <button
@@ -1707,7 +1916,7 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
 
                 {/* Add Trip Page */}
                 <div className="h-full p-2" style={{ width: `${100 / totalPages}%` }}>
@@ -1756,6 +1965,9 @@ const App: React.FC = () => {
 
   const renderMemoryDetail = () => {
     if (!viewingSession) return null;
+    const isGuestUser = !user?.email;
+    const isAnalysisComplete = viewingSession.analysisStatus === 'complete' || !!viewingSession.analysis;
+    const isRetrying = analysisRetryingSessionId === viewingSession.id;
     return (
       <div className="min-h-dvh bg-slate-50 flex flex-col font-sans">
         <header className="bg-white p-4 flex items-center shadow-sm sticky top-0 z-10 border-b border-slate-200">
@@ -1768,18 +1980,97 @@ const App: React.FC = () => {
           <div className="w-10"></div>
         </header>
         <div className="p-4 md:p-6 max-w-3xl mx-auto w-full space-y-6 md:space-y-8">
+          {isGuestUser && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col gap-3">
+              <div className="flex items-start gap-2 text-emerald-900 text-sm">
+                <CheckCircle size={16} className="mt-0.5 text-emerald-600" />
+                <div>
+                  <p className="font-semibold">Create your passport to save this trip.</p>
+                  <p className="text-emerald-800 text-xs">Keep your report, stamps, and future adventures in one place.</p>
+                </div>
+              </div>
+              <div>
+                <Button size="sm" variant="primary" onClick={promptSignupForPassport}>
+                  Create free passport
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!isAnalysisComplete && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col gap-3">
+              <div className="flex items-start gap-2 text-amber-800 text-sm">
+                <AlertTriangle size={16} className="mt-0.5 text-amber-500" />
+                <div>
+                  <p className="font-semibold">Analysis pending</p>
+                  <p className="text-amber-700 text-xs">Retry analysis to stamp your visa and complete this report.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => retrySessionAnalysis(viewingSession)}
+                  disabled={isRetrying}
+                >
+                  {isRetrying ? 'Retrying...' : 'Retry analysis'}
+                </Button>
+                {analysisRetryError && (
+                  <span className="text-xs text-amber-700">{analysisRetryError}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Summary Card */}
           <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200">
             <h3 className="text-teal-600 font-bold uppercase tracking-wider text-xs mb-4">Travel Log Summary</h3>
-            <p className="text-xl font-serif text-slate-800 leading-relaxed">"{viewingSession.analysis?.summary}"</p>
+            <p className="text-xl font-serif text-slate-800 leading-relaxed">
+              "{isAnalysisComplete ? viewingSession.analysis?.summary : 'Analysis pending. Retry to generate your summary.'}"
+            </p>
           </div>
 
-          {/* Insight & Badges */}
+          {/* Trip Details */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+              <h3 className="text-slate-500 font-bold uppercase tracking-wider text-xs mb-3">Location</h3>
+              <p className="text-slate-900 font-semibold text-lg">{viewingSession.city || viewingSession.countryName}</p>
+              <p className="text-slate-500 text-sm">{viewingSession.countryName}</p>
+              <p className="text-slate-400 text-xs mt-3">{new Date(viewingSession.date).toLocaleDateString()}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm md:col-span-2">
+              <h3 className="text-slate-500 font-bold uppercase tracking-wider text-xs mb-3">Journal Entry</h3>
+              <p className="text-slate-700 leading-relaxed text-sm whitespace-pre-line">
+                {viewingSession.journalEntry || 'No journal entry recorded.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Insight & Problems */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-orange-50/50 rounded-2xl p-6 border border-orange-100">
               <h3 className="text-orange-700 font-bold uppercase tracking-wider text-xs mb-3">Key Insight</h3>
-              <p className="text-slate-800 font-medium">{viewingSession.analysis?.keyInsight}</p>
+              <p className="text-slate-800 font-medium">
+                {isAnalysisComplete ? viewingSession.analysis?.keyInsight : 'Analysis pending.'}
+              </p>
             </div>
+            <div className="bg-teal-50/50 rounded-2xl p-6 border border-teal-100">
+              <h3 className="text-teal-700 font-bold uppercase tracking-wider text-xs mb-3">Problems Spotted</h3>
+              <div className="space-y-2 text-sm text-slate-700">
+                {viewingSession.identifiedProblems && viewingSession.identifiedProblems.length > 0 ? (
+                  viewingSession.identifiedProblems.map((problem, index) => (
+                    <div key={`${problem}-${index}`} className="bg-white rounded-lg border border-teal-100 px-3 py-2">
+                      {problem}
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-sm text-slate-500 italic">No problems recorded.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {!isGuestUser && (
             <div className="bg-teal-50/50 rounded-2xl p-6 border border-teal-100">
               <h3 className="text-teal-700 font-bold uppercase tracking-wider text-xs mb-3">Badges Earned</h3>
               <div className="flex flex-wrap gap-2">
@@ -1794,20 +2085,24 @@ const App: React.FC = () => {
                 )}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Chat Transcript */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
             <h3 className="text-slate-400 font-bold uppercase tracking-wider text-xs mb-6">Interview Transcript</h3>
             <div className="space-y-6">
-              {viewingSession.entries.map((entry, i) => (
-                <div key={i} className={`flex ${entry.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] p-4 rounded-2xl text-base leading-relaxed ${entry.role === 'user' ? 'bg-indigo-50 text-indigo-900 rounded-br-none' : 'bg-slate-50 text-slate-800 rounded-bl-none border border-slate-100'}`}>
-                    <span className="font-bold text-xs block mb-1 opacity-40 uppercase tracking-wide">{entry.role === 'user' ? 'Me' : 'Nia'}</span>
-                    {entry.text}
+              {viewingSession.entries.length > 0 ? (
+                viewingSession.entries.map((entry, i) => (
+                  <div key={i} className={`flex ${entry.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] p-4 rounded-2xl text-base leading-relaxed ${entry.role === 'user' ? 'bg-indigo-50 text-indigo-900 rounded-br-none' : 'bg-slate-50 text-slate-800 rounded-bl-none border border-slate-100'}`}>
+                      <span className="font-bold text-xs block mb-1 opacity-40 uppercase tracking-wide">{entry.role === 'user' ? 'Me' : 'Nia'}</span>
+                      {entry.text}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="text-sm text-slate-500 italic">No transcript recorded.</div>
+              )}
             </div>
           </div>
         </div>
@@ -1909,50 +2204,60 @@ const App: React.FC = () => {
               <p className="text-indigo-900 font-medium text-center italic leading-relaxed">"{sessionAnalysis.summary}"</p>
             </div>
 
-            {/* Points Grid */}
-            <h3 className="font-bold text-slate-400 mb-3 text-center uppercase text-xs tracking-widest">Skill Points Gained</h3>
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {Object.entries(sessionAnalysis.points).map(([key, score]) => (
-                <div key={key} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between border border-slate-100">
-                  <span className="capitalize text-slate-600 font-medium text-sm">{key.replace('_', ' ')}</span>
-                  <div className="flex items-center gap-1 font-bold text-orange-500">
-                    +{score} <Star size={14} fill="currentColor" />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Badges or Lock */}
-            {isPaidTier ? (
-              newBadges.length > 0 ? (
-                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 mb-6 animate-in slide-in-from-bottom-5 fade-in">
-                  <h4 className="font-bold text-orange-800 mb-3 flex items-center gap-2 text-sm uppercase tracking-wide">
-                    <Award size={16} /> New Badge Unlocked!
-                  </h4>
-                  {newBadges.map(b => (
-                    <div key={b.id} className="flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm mb-2 last:mb-0">
-                      <span className="text-3xl">{b.icon}</span>
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{b.name}</p>
-                        <p className="text-xs text-slate-500">{b.description}</p>
+            {!isGuestUser && (
+              <>
+                {/* Points Grid */}
+                <h3 className="font-bold text-slate-400 mb-3 text-center uppercase text-xs tracking-widest">Skill Points Gained</h3>
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  {Object.entries(sessionAnalysis.points).map(([key, score]) => (
+                    <div key={key} className="bg-slate-50 rounded-xl p-3 flex items-center justify-between border border-slate-100">
+                      <span className="capitalize text-slate-600 font-medium text-sm">{key.replace('_', ' ')}</span>
+                      <div className="flex items-center gap-1 font-bold text-orange-500">
+                        +{score} <Star size={14} fill="currentColor" />
                       </div>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-center text-slate-400 text-sm mb-6">Keep exploring to unlock new badges!</p>
-              )
-            ) : (
-              <div className="bg-slate-100 rounded-2xl p-4 mb-6 relative overflow-hidden border border-slate-200">
-                <div className="flex items-center gap-2 opacity-50 filter blur-[2px]">
-                  <div className="w-10 h-10 bg-slate-300 rounded-full"></div>
-                  <div className="flex-1 h-4 bg-slate-300 rounded"></div>
-                </div>
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60">
-                  <Lock className="text-slate-500 mb-1" size={24} />
-                  <p className="text-xs font-bold text-slate-600">Badges are a Pro Feature</p>
-                  <p className="text-[10px] text-slate-500">Upgrade to collect them!</p>
-                </div>
+
+                {/* Badges or Lock */}
+                {isPaidTier ? (
+                  newBadges.length > 0 ? (
+                    <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 mb-6 animate-in slide-in-from-bottom-5 fade-in">
+                      <h4 className="font-bold text-orange-800 mb-3 flex items-center gap-2 text-sm uppercase tracking-wide">
+                        <Award size={16} /> New Badge Unlocked!
+                      </h4>
+                      {newBadges.map(b => (
+                        <div key={b.id} className="flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm mb-2 last:mb-0">
+                          <span className="text-3xl">{b.icon}</span>
+                          <div>
+                            <p className="font-bold text-slate-800 text-sm">{b.name}</p>
+                            <p className="text-xs text-slate-500">{b.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-slate-400 text-sm mb-6">Keep exploring to unlock new badges!</p>
+                  )
+                ) : (
+                  <div className="bg-slate-100 rounded-2xl p-4 mb-6 relative overflow-hidden border border-slate-200">
+                    <div className="flex items-center gap-2 opacity-50 filter blur-[2px]">
+                      <div className="w-10 h-10 bg-slate-300 rounded-full"></div>
+                      <div className="flex-1 h-4 bg-slate-300 rounded"></div>
+                    </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60">
+                      <Lock className="text-slate-500 mb-1" size={24} />
+                      <p className="text-xs font-bold text-slate-600">Badges are a Pro Feature</p>
+                      <p className="text-[10px] text-slate-500">Upgrade to collect them!</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {isGuestUser && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-6 text-emerald-800 text-sm font-medium flex items-center justify-center gap-2">
+                <CheckCircle size={16} /> Visa stamped. Your trip is complete.
               </div>
             )}
 
@@ -1968,7 +2273,7 @@ const App: React.FC = () => {
                   }}
                   className="flex items-center justify-center"
                 >
-                  Create your passport to view this trip <Lock size={18} className="ml-2" />
+                  View your passport <ArrowRight size={18} className="ml-2" />
                 </Button>
                 <Button
                   fullWidth

@@ -33,6 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
   const limit = TIER_LIMITS[user.tier];
   const isUnlimited = user.tier === UserTier.ADVENTURER;
   const isPaid = user.tier === UserTier.PRO || user.tier === UserTier.ADVENTURER;
+  const isGuestUser = !user.email || user.tier === UserTier.GUEST;
   const isLimitReached = !isUnlimited && tripsUsed >= limit;
   const freeLimit = TIER_LIMITS[UserTier.FREE];
   const showUpgradeCta = user.tier !== UserTier.ADVENTURER && (
@@ -41,6 +42,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
     totalTripsUsed >= freeLimit
   );
   const tripsLabel = user.tier === UserTier.STARTER ? 'Trips Saved (this month)' : 'Trips Saved';
+  const stampedTrips = user.kids.reduce(
+    (sum, kid) => sum + kid.sessions.filter(session => session.analysisStatus === 'complete' || !!session.analysis).length,
+    0
+  );
+  const pendingTrips = Math.max(0, totalTripsUsed - stampedTrips);
   
   // Child limits
   const childLimit = TIER_CHILD_LIMITS[user.tier];
@@ -112,44 +118,64 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
           )}
         </div>
         
-        {/* Badges Card */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative overflow-hidden">
-             <div className="flex items-center gap-3 mb-2">
-                 <Award className="text-orange-500" size={24} />
-                 <h3 className="font-bold text-slate-800">Recent Badges</h3>
-             </div>
-             
-             {isPaid ? (
-                <div className="space-y-2">
-                   {user.kids.flatMap(k => k.badges).length > 0 ? (
-                       user.kids.flatMap(k => k.badges).slice(0,3).map((badge, idx) => (
-                           <div key={idx} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
-                               <span className="text-2xl">{badge.icon}</span>
-                               <div>
-                                   <p className="font-bold text-xs text-slate-800">{badge.name}</p>
-                                   <p className="text-[10px] text-slate-500 uppercase tracking-wider">{badge.category}</p>
-                               </div>
+        {/* Badges or Passport Status */}
+        {isGuestUser ? (
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative overflow-hidden">
+            <div className="flex items-center gap-3 mb-2">
+              <CheckCircle className="text-emerald-500" size={24} />
+              <h3 className="font-bold text-slate-800">Passport Status</h3>
+            </div>
+            <div className="space-y-2 text-sm text-slate-600">
+              <div className="flex items-center justify-between">
+                <span>Visa stamped</span>
+                <span className="font-semibold text-slate-900">{stampedTrips}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Pending analysis</span>
+                <span className="font-semibold text-amber-600">{pendingTrips}</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">Stamps appear after analysis completes.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative overflow-hidden">
+               <div className="flex items-center gap-3 mb-2">
+                   <Award className="text-orange-500" size={24} />
+                   <h3 className="font-bold text-slate-800">Recent Badges</h3>
+               </div>
+               
+               {isPaid ? (
+                  <div className="space-y-2">
+                     {user.kids.flatMap(k => k.badges).length > 0 ? (
+                         user.kids.flatMap(k => k.badges).slice(0,3).map((badge, idx) => (
+                             <div key={idx} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
+                                 <span className="text-2xl">{badge.icon}</span>
+                                 <div>
+                                     <p className="font-bold text-xs text-slate-800">{badge.name}</p>
+                                     <p className="text-[10px] text-slate-500 uppercase tracking-wider">{badge.category}</p>
+                                 </div>
+                             </div>
+                         ))
+                     ) : (
+                         <p className="text-sm text-slate-500">No badges earned yet. Start reflecting!</p>
+                     )}
+                  </div>
+               ) : (
+                  <div className="text-center py-4">
+                      <div className="filter blur-sm opacity-50 mb-2 space-y-2">
+                          <div className="h-10 bg-slate-100 rounded-lg w-full"></div>
+                          <div className="h-10 bg-slate-100 rounded-lg w-full"></div>
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
+                           <div className="flex flex-col items-center">
+                              <Lock className="text-slate-400 mb-1" size={20} />
+                              <p className="text-xs font-bold text-slate-500">Pro Feature</p>
                            </div>
-                       ))
-                   ) : (
-                       <p className="text-sm text-slate-500">No badges earned yet. Start reflecting!</p>
-                   )}
-                </div>
-             ) : (
-                <div className="text-center py-4">
-                    <div className="filter blur-sm opacity-50 mb-2 space-y-2">
-                        <div className="h-10 bg-slate-100 rounded-lg w-full"></div>
-                        <div className="h-10 bg-slate-100 rounded-lg w-full"></div>
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
-                         <div className="flex flex-col items-center">
-                            <Lock className="text-slate-400 mb-1" size={20} />
-                            <p className="text-xs font-bold text-slate-500">Pro Feature</p>
-                         </div>
-                    </div>
-                </div>
-             )}
-        </div>
+                      </div>
+                  </div>
+               )}
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
              <h3 className="font-bold text-slate-800 mb-2">Next Destination?</h3>
@@ -210,7 +236,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onUpgrade, onViewPas
                            <span className="text-xl">{getFlagEmoji(session.countryCode)}</span>
                            <span className="font-bold text-sm text-slate-700 truncate">{session.countryName}</span>
                          </div>
-                         <p className="text-xs text-slate-500 line-clamp-2">{session.analysis?.summary || "No summary yet."}</p>
+                         <p className="text-xs text-slate-500 line-clamp-2">
+                           {session.analysisStatus === 'pending'
+                             ? 'Analysis pending - retry from the trip report.'
+                             : (session.analysis?.summary || 'No summary yet.')}
+                         </p>
                          <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-400">
                             <Calendar size={10} />
                             {new Date(session.date).toLocaleDateString()}

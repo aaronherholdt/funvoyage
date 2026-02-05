@@ -19,7 +19,7 @@ interface JournalStepProps {
     city: string;
     countryName: string;
     age: number;
-    onComplete: (journalEntry: string) => void;
+    onComplete: (journalEntry: string) => void | Promise<void>;
     onBack: () => void;
 }
 

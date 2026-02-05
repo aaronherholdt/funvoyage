@@ -62,6 +62,7 @@ export interface Session {
   identifiedProblems: string[]; // Max 3 items
   // Analysis data
   analysis?: SessionAnalysis;
+  analysisStatus?: 'pending' | 'complete';
   earnedBadges?: Badge[];
   completed: boolean;
 }
